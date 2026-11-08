@@ -547,46 +547,6 @@ code {
   flex: 1;
 }
 
-/* Grid-night panel with mascot (the daemon's home) */
-.daemon-panel {
-  position: relative;
-  margin-left: 6px;
-  min-height: 220px;
-  background-color: var(--grid-night);
-  background-image: var(--grid-bg);
-  background-size: 24px 24px;
-  border: 4px solid var(--daemon);
-  box-shadow: -6px 6px 0 var(--ink);
-  overflow: hidden;
-}
-
-.daemon-panel img {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 14px;
-  bottom: 40px;
-  width: calc(100% - 32px);
-  height: calc(100% - 54px);
-  object-fit: contain;
-}
-
-.daemon-panel .foot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 12px;
-  background: var(--daemon);
-  color: var(--ink);
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .empty {
   display: flex;
   flex-direction: column;

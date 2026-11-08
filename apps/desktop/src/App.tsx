@@ -3,7 +3,6 @@ import { Play, Square, RotateCw, Trash2, Terminal, ExternalLink, Plus, Copy, Che
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
-import daemonArt from "./assets/daemon.png";
 import "./App.css";
 
 type Tab = "servers" | "found" | "tunnels" | "settings";
@@ -254,13 +253,17 @@ export function App() {
   const crashed = services.filter((s) => s.status === "crashed" || s.status === "unhealthy").length;
   const idle = services.length - running - crashed;
 
-  const daemonPanel = (
-    <div className="daemon-panel">
-      <img src={daemonArt} alt="The prot daemon mascot" />
-      <div className="foot">
-        <span>PROTD {health ? `v${health.version}` : "OFFLINE"}</span>
-        <span>WATCHING {services.length}</span>
+  const daemonInfo = (
+    <div className="card">
+      <div className="card-head">
+        <span className="label">PROTD</span>
+        <Status kind={isOnline ? "run" : "crash"} text={isOnline ? "ACTIVE" : "OFFLINE"} />
       </div>
+      <div className="card-line">
+        <code>{health ? `v${health.version}` : "no connection"}</code>
+        {health && <span className="dim">pid {health.pid}</span>}
+      </div>
+      {health && <span className="dim">{health.admin_addr}</span>}
     </div>
   );
 
@@ -297,11 +300,7 @@ export function App() {
               <>
                 <div className="empty">
                   <p>No servers yet. Register one, or adopt something already listening from the FOUND tab.</p>
-                  <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-                    <Plus size={16} strokeWidth={2.5} /> Add server
-                  </button>
                 </div>
-                {daemonPanel}
               </>
             ) : (
               services.map((s) => {
@@ -427,7 +426,7 @@ export function App() {
             <div className="screen-title">
               <h1>settings</h1>
             </div>
-            {daemonPanel}
+            {daemonInfo}
             <Field label="Admin API URL" value={adminUrl} onChange={setAdminUrl} prompt="@" />
             <Field label="Auth token" type="password" value={authToken} onChange={setAuthToken} prompt="#" />
             <div>
