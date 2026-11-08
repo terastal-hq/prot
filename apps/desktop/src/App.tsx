@@ -426,23 +426,27 @@ export function App() {
             {discovered.length > 0 && filteredDiscovered.length === 0 && (
               <p className="dim">No matches for &quot;{query}&quot;.</p>
             )}
-            {filteredDiscovered.map((d) => (
-              <div key={d.id} className="card">
-                <div className="card-head">
-                  <span className="card-name">{d.name || `PID ${d.pid}`}</span>
-                  {d.is_http ? <span className="tag http">HTTP {d.http_status}</span> : <span className="tag">TCP</span>}
-                </div>
-                <div className="card-line">
-                  <span className="port">:{d.port}</span>
-                  <span className="dim">{d.page_title || d.framework || d.exe}</span>
-                </div>
-                <div className="card-actions">
-                  <button className="btn btn-sm" onClick={() => openAdopt(d)}>
-                    Adopt
-                  </button>
-                </div>
-              </div>
-            ))}
+            {filteredDiscovered.length > 0 && (
+              <ul className="found-list">
+                {filteredDiscovered.map((d) => (
+                  <li key={d.id} className="found-row">
+                    <span className="found-port">:{d.port}</span>
+                    <div className="found-info">
+                      <span className="found-name">{d.name || `PID ${d.pid}`}</span>
+                      <span className="found-detail">{d.page_title || d.framework || d.exe || "-"}</span>
+                    </div>
+                    {d.is_http ? (
+                      <span className="tag http">HTTP {d.http_status}</span>
+                    ) : (
+                      <span className="tag">TCP</span>
+                    )}
+                    <button className="btn btn-sm" onClick={() => openAdopt(d)}>
+                      Adopt
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
 

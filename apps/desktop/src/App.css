@@ -985,3 +985,73 @@ code {
   height: 22px;
   flex-shrink: 0;
 }
+
+/* Found tab: one grouped list instead of a stack of windows */
+.found-list {
+  list-style: none;
+  background: var(--sunken);
+  border: 3px solid;
+  border-color: var(--inset);
+  margin: 0 2px;
+}
+
+.found-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-top: 2px solid #1c1f20;
+}
+
+.found-row:first-child {
+  border-top: none;
+}
+
+.found-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.found-row:hover {
+  background: rgba(251, 136, 8, 0.12);
+}
+
+.found-port {
+  font-family: var(--font-wordart);
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  text-shadow: -1px 1px 0 #000;
+}
+
+.found-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.found-name {
+  font-weight: 700;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.found-detail {
+  font-size: 11px;
+  color: var(--ash);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* narrow windows: drop the tag so the name keeps room */
+@media (max-width: 400px) {
+  .found-row {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+  }
+  .found-row .tag {
+    display: none;
+  }
+}
