@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/storage"
+	"github.com/terastal-hq/prot/internal/updater"
 )
 
 func main() {
@@ -65,6 +67,8 @@ func main() {
 		cmdStatus(args)
 	case "doctor":
 		cmdDoctor(args)
+	case "update", "upgrade":
+		cmdUpdate(args)
 	case "mcp":
 		cmdMCP(args)
 	case "help", "--help", "-h":
@@ -100,6 +104,7 @@ Routing & Discovery:
 Integrations & Diagnostics:
   mcp              Run Model Context Protocol (MCP) stdio adapter
   doctor           Check environment, permissions, and toolchain
+  update           Check for updates and upgrade prot in-place
   version          Print version information
 
 Options:
@@ -858,4 +863,74 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func cmdUpdate(args []string) {
+	checkOnly := false
+	force := false
+
+	for _, a := range args {
+		switch a {
+		case "--check", "-c":
+			checkOnly = true
+		case "--force", "-f":
+			force = true
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	fmt.Println("Checking for updates...")
+	rel, hasUpdate, err := updater.CheckUpdate(ctx, "", daemon.Version)
+	if err != nil {
+		if errors.Is(err, updater.ErrNoReleases) {
+			fmt.Printf("No official releases published yet (running development version %s).\n", daemon.Version)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Error checking for updates: %v\n", err)
+		os.Exit(1)
+	}
+
+	if checkOnly {
+		if hasUpdate {
+			fmt.Printf("Update available: %s (current: %s)\n", rel.TagName, daemon.Version)
+			fmt.Println("Run 'prot update' to upgrade.")
+		} else {
+			fmt.Printf("prot is up to date (version %s)\n", daemon.Version)
+		}
+		return
+	}
+
+	if !hasUpdate && !force {
+		fmt.Printf("prot is already up to date (version %s)\n", daemon.Version)
+		return
+	}
+
+	fmt.Printf("Updating prot from %s to %s...\n", daemon.Version, rel.TagName)
+	asset, err := updater.FindAssetForPlatform(rel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Downloading %s (%d bytes)...\n", asset.Name, asset.Size)
+	protBytes, protdBytes, err := updater.DownloadAsset(ctx, asset.DownloadURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Applying update in-place...")
+	if err := updater.ApplyUpdate(protBytes, protdBytes, ""); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to apply update: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Restarting background daemon...")
+	if err := updater.RestartDaemon(ctx); err != nil {
+		fmt.Printf("Notice: could not automatically restart daemon: %v\n", err)
+	}
+
+	fmt.Printf("✓ Successfully updated prot to %s!\n", rel.TagName)
 }

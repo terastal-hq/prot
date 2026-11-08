@@ -157,7 +157,34 @@ prot doctor — Diagnostic and Support Matrix Check
 
 ---
 
-## 7. AI Agent & MCP Client Setup
+## 8. Updating prot
+
+### In-Place CLI Self-Updater (Recommended)
+You can update `prot` and `protd` to the latest release directly from your terminal:
+
+```bash
+# Check if a new release is available
+prot update --check
+
+# Download, swap binaries atomically, and restart the background daemon
+prot update
+```
+
+The updater:
+1. Queries the latest GitHub release assets for your operating system and architecture.
+2. Performs an atomic in-place binary swap using OS file renames (avoiding `text file busy` errors with running binaries).
+3. Automatically restarts the background daemon via `systemctl --user restart protd` (Linux) or `launchd` (macOS), maintaining your registered services and aliases without downtime.
+
+### Script Re-run
+You can also re-run the one-line installer at any time:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
+```
+
+---
+
+## 9. AI Agent & MCP Client Setup
 
 Prot exposes the **Model Context Protocol (MCP)** so AI coding agents (Claude Desktop, Cursor, pi, etc.) can discover, start, stop, and inspect your local services.
 
