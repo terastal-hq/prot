@@ -1,4 +1,6 @@
-# prot
+<h1 align="center">
+  <img src="docs/assets/prot-logo.png" alt="prot" width="420" />
+</h1>
 
 > **Your development servers, under control.**  
 > Local-first · Cross-platform ambition · Agent-native · Open API
@@ -8,7 +10,7 @@ Prot is a local-first developer utility and control plane that discovers, organi
 It provides stable service identities and addresses (`http://<alias>.localhost`) independent of underlying process IDs, TCP ports, and infrastructure locations.
 
 <p align="center">
-  <img src="docs/assets/prot-desktop-ui.png" alt="prot Desktop Dashboard" width="480" />
+  <img src="docs/assets/prot-desktop-ui.png" alt="prot desktop app" width="340" />
 </p>
 
 ## Quick Install
@@ -23,24 +25,9 @@ For package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`),
 
 ## Architecture
 
-```
-   Prot Desktop               prot CLI               AI Agents
-  (Tauri + React)        (Terminal Control)        (MCP Clients)
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                     REST API · IPC · MCP
-                                 │
-                              ▼  ▼
-                             protd
-                 (Long-running background daemon)
-     ┌───────────────────────────┼───────────────────────────┐
-     │                           │                           │
-Service Registry         Reverse Proxy (.localhost)    Process Discovery
-SQLite WAL mode          WebSockets & SSE Streaming    Bounded HTTP Probes
-     │                           │                           │
-Child Process Supervisor     SSH Tunnels                Local Event Log
-```
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Prot Desktop, the prot CLI and AI agents talk over REST, IPC and MCP to protd, which owns the service registry, reverse proxy, process discovery, supervisor, SSH tunnels and security layer." width="860" />
+</p>
 
 - **`protd`**: Long-running background daemon managing process discovery, reverse proxy routing, OpenSSH tunnels, and SQLite registry.
 - **`prot`**: Fast, lightweight CLI for terminal control, diagnostics, and MCP stdio adapter.
