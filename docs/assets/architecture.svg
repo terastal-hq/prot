@@ -15,7 +15,6 @@
 <linearGradient id="bar" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#4a1400"/><stop offset=".55" stop-color="#b53a05"/><stop offset="1" stop-color="#fb8808"/></linearGradient>
 <linearGradient id="bar-crash" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#2a0000"/><stop offset=".55" stop-color="#8a0d10"/><stop offset="1" stop-color="#e0301a"/></linearGradient>
 <linearGradient id="metal" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#34383a"/><stop offset="1" stop-color="#24282a"/></linearGradient>
-<radialGradient id="gold" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#fff7a8"/><stop offset=".45" stop-color="#ffd21a"/><stop offset="1" stop-color="#e89a00"/></radialGradient>
 <radialGradient id="glowbg" cx=".5" cy="0" r=".7"><stop offset="0" stop-color="#b03a05" stop-opacity=".35"/><stop offset="1" stop-color="#b03a05" stop-opacity="0"/></radialGradient>
 <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r=".6" fill="#fff" opacity=".07"/></pattern>
 <pattern id="hazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="16" height="16" fill="#050608"/><rect width="8" height="16" fill="#fb8808"/></pattern>
@@ -59,10 +58,5 @@
 <rect x="60" y="420" width="270" height="82" fill="#000"/><polyline points="61.5,500.5 61.5,421.5 328.5,421.5" fill="none" stroke="#0a0b0c" stroke-width="3"/><polyline points="61.5,500.5 328.5,500.5 328.5,421.5" fill="none" stroke="#9aa092" stroke-width="3"/><text x="72" y="445" class="wa gold">PROCESS SUPERVISOR</text><text x="72" y="466" class="mono grn">child process groups</text><text x="72" y="483" class="mono dim">bounded in-memory logs</text>
 <rect x="345" y="420" width="270" height="82" fill="#000"/><polyline points="346.5,500.5 346.5,421.5 613.5,421.5" fill="none" stroke="#0a0b0c" stroke-width="3"/><polyline points="346.5,500.5 613.5,500.5 613.5,421.5" fill="none" stroke="#9aa092" stroke-width="3"/><text x="357" y="445" class="wa gold">SSH TUNNELS</text><text x="357" y="466" class="mono grn">OpenSSH supervision</text><text x="357" y="483" class="mono dim">auto reconnect + backoff</text>
 <rect x="630" y="420" width="270" height="82" fill="#000"/><polyline points="631.5,500.5 631.5,421.5 898.5,421.5" fill="none" stroke="#0a0b0c" stroke-width="3"/><polyline points="631.5,500.5 898.5,500.5 898.5,421.5" fill="none" stroke="#9aa092" stroke-width="3"/><text x="642" y="445" class="wa gold">SECURITY</text><text x="642" y="466" class="mono grn">loopback only, 256-bit token</text><text x="642" y="483" class="mono dim">DNS-rebinding protection</text>
-<g transform="rotate(12 867 232)">
-<polygon points="863.0,192.0 871.3,205.1 885.0,197.9 885.6,213.4 901.1,214.0 893.9,227.7 907.0,236.0 893.9,244.3 901.1,258.0 885.6,258.6 885.0,274.1 871.3,266.9 863.0,280.0 854.7,266.9 841.0,274.1 840.4,258.6 824.9,258.0 832.1,244.3 819.0,236.0 832.1,227.7 824.9,214.0 840.4,213.4 841.0,197.9 854.7,205.1" fill="#000" opacity="0.6"/>
-<polygon points="867.0,188.0 875.3,201.1 889.0,193.9 889.6,209.4 905.1,210.0 897.9,223.7 911.0,232.0 897.9,240.3 905.1,254.0 889.6,254.6 889.0,270.1 875.3,262.9 867.0,276.0 858.7,262.9 845.0,270.1 844.4,254.6 828.9,254.0 836.1,240.3 823.0,232.0 836.1,223.7 828.9,210.0 844.4,209.4 845.0,193.9 858.7,201.1" fill="url(#gold)" stroke="#000" stroke-width="2"/>
-<text x="867" y="230" text-anchor="middle" class="wa" fill="#050608" style="font-size:15px">100%</text><text x="867" y="246" text-anchor="middle" class="wa" fill="#050608" style="font-size:15px">LOCAL</text>
-</g>
 <rect x="43" y="542" width="874" height="14" fill="#000"/><rect x="45" y="544" width="870" height="10" fill="url(#hazard)"/>
 </svg>

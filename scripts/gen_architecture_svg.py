@@ -5,7 +5,6 @@ Fonts are embedded as data URIs so the SVG renders the same everywhere (GitHub
 shows SVGs through <img>, which blocks external font files).
 """
 import base64
-import math
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -79,15 +78,6 @@ def arrow_head(cx, y, size=22):
     )
 
 
-def burst(cx, cy, r_out, r_in, n=12):
-    pts = []
-    for i in range(n * 2):
-        r = r_out if i % 2 == 0 else r_in
-        a = math.pi * i / n - math.pi / 2
-        pts.append(f"{cx + r*math.cos(a):.1f},{cy + r*math.sin(a):.1f}")
-    return " ".join(pts)
-
-
 parts = []
 
 # --- clients row -----------------------------------------------------------
@@ -147,17 +137,6 @@ for i, (head, lines) in enumerate(subs):
     col, row = i % 3, i // 3
     parts.append(well(PX + 15 + col * (SW + GAP), PY + 28 + 20 + row * (SH + 18), SW, SH, head, lines))
 
-# starburst sticker
-bx, by = PX + PW - 48, PY - 40
-parts.append(f'<g transform="rotate(12 {bx} {by})">')
-parts.append(f'<polygon points="{burst(bx-4, by+4, 44, 32)}" fill="#000" opacity="0.6"/>')
-parts.append(f'<polygon points="{burst(bx, by, 44, 32)}" fill="url(#gold)" stroke="#000" stroke-width="2"/>')
-parts.append(
-    f'<text x="{bx}" y="{by-2}" text-anchor="middle" class="wa" fill="#050608" style="font-size:15px">100%</text>'
-    f'<text x="{bx}" y="{by+14}" text-anchor="middle" class="wa" fill="#050608" style="font-size:15px">LOCAL</text>'
-)
-parts.append("</g>")
-
 # footer stripe
 FY = PY + PH + 22
 parts.append(stripe_rect(45, FY, 870, 10))
@@ -181,7 +160,6 @@ svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{
 <linearGradient id="bar" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#4a1400"/><stop offset=".55" stop-color="#b53a05"/><stop offset="1" stop-color="#fb8808"/></linearGradient>
 <linearGradient id="bar-crash" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#2a0000"/><stop offset=".55" stop-color="#8a0d10"/><stop offset="1" stop-color="#e0301a"/></linearGradient>
 <linearGradient id="metal" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#34383a"/><stop offset="1" stop-color="#24282a"/></linearGradient>
-<radialGradient id="gold" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#fff7a8"/><stop offset=".45" stop-color="#ffd21a"/><stop offset="1" stop-color="#e89a00"/></radialGradient>
 <radialGradient id="glowbg" cx=".5" cy="0" r=".7"><stop offset="0" stop-color="#b03a05" stop-opacity=".35"/><stop offset="1" stop-color="#b03a05" stop-opacity="0"/></radialGradient>
 <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r=".6" fill="#fff" opacity=".07"/></pattern>
 <pattern id="hazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="16" height="16" fill="#050608"/><rect width="8" height="16" fill="#fb8808"/></pattern>
