@@ -13,9 +13,7 @@ It provides stable service identities and addresses (`http://<alias>.localhost`)
   <img src="docs/assets/prot-desktop-ui.png" alt="prot desktop app" width="340" />
 </p>
 
-<h2>
-  <img src="docs/assets/headings/quick-install.svg" alt="Quick Install" />
-</h2>
+<img src="docs/assets/headings/quick-install.svg" alt="Quick Install" />
 
 Install the `prot` CLI, background daemon (`protd`), and systemd/launchd service with a single command:
 
@@ -25,9 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/insta
 
 For package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
 
-<h2>
-  <img src="docs/assets/headings/architecture.svg" alt="Architecture" />
-</h2>
+<img src="docs/assets/headings/architecture.svg" alt="Architecture" />
 
 <p align="center">
   <img src="docs/assets/architecture.svg" alt="Prot Desktop, the prot CLI and AI agents talk over REST, IPC and MCP to protd, which owns the service registry, reverse proxy, process discovery, supervisor, SSH tunnels and security layer." width="860" />
@@ -38,9 +34,7 @@ For package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`),
 - **Prot Desktop**: Tauri 2 + React + TypeScript first-party dashboard.
 - **REST & MCP API**: Loopback management API with 256-bit token authentication and DNS-rebinding protection.
 
-<h2>
-  <img src="docs/assets/headings/quick-tour.svg" alt="Quick Tour" />
-</h2>
+<img src="docs/assets/headings/quick-tour.svg" alt="Quick Tour" />
 
 ### 1. Inspect System & Diagnostics
 ```bash
@@ -75,9 +69,7 @@ prot logs web -f
 prot status
 ```
 
-<h2>
-  <img src="docs/assets/headings/ai-agent-integration-mcp.svg" alt="AI Agent Integration (MCP)" />
-</h2>
+<img src="docs/assets/headings/ai-agent-integration-mcp.svg" alt="AI Agent Integration (MCP)" />
 
 Prot natively implements the **Model Context Protocol (MCP)**. AI agents (such as Claude Desktop, Cursor, or pi) can discover your local services, verify health, and ensure required endpoints are running.
 
@@ -112,18 +104,14 @@ Add to your MCP configuration file (e.g. `claude_desktop_config.json`):
 - `start_service`, `stop_service`, `restart_service`: Process controls.
 - `set_alias`: Manage dynamic proxy aliases.
 
-<h2>
-  <img src="docs/assets/headings/documentation.svg" alt="Documentation" />
-</h2>
+<img src="docs/assets/headings/documentation.svg" alt="Documentation" />
 
 - **[Installation Guide](docs/installation.md)** — One-line installer, binary packages, background service management.
 - **[Window Managers](docs/window-managers.md)** — Floating rules for niri, sway, i3 and Hyprland.
 - **[Platform Support Matrix](docs/support-matrix.md)** — Operating system tiers and hardware capabilities.
 - **[OpenAPI Specification](schemas/openapi.yaml)** — Complete REST API contract.
 
-<h2>
-  <img src="docs/assets/headings/testing.svg" alt="Testing" />
-</h2>
+<img src="docs/assets/headings/testing.svg" alt="Testing" />
 
 Run the Go unit test suite:
 ```bash
@@ -135,8 +123,6 @@ Run the end-to-end integration acceptance test:
 ./scripts/test_e2e.sh
 ```
 
-<h2>
-  <img src="docs/assets/headings/license.svg" alt="License" />
-</h2>
+<img src="docs/assets/headings/license.svg" alt="License" />
 
 MIT © [Terastal HQ](https://github.com/terastal-hq)
