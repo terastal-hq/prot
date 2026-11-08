@@ -52,7 +52,7 @@ jobs:
 
   release-desktop:
     name: Build Desktop App (${{ matrix.platform }})
-    needs: test
+    needs: [test, release-go]
     strategy:
       fail-fast: false
       matrix:

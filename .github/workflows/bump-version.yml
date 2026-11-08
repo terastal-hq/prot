@@ -1,0 +1,81 @@
+name: Bump Version & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: "Custom version (required only if bump is 'custom', e.g. 1.0.0)"
+        required: false
+        type: string
+      release:
+        description: "Automatically tag and trigger release workflow?"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump Version & Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine bump target
+        id: bump_target
+        run: |
+          if [ "${{ github.event.inputs.bump }}" = "custom" ]; then
+            if [ -z "${{ github.event.inputs.custom_version }}" ]; then
+              echo "Error: custom_version input is required when bump is 'custom'"
+              exit 1
+            fi
+            echo "target=${{ github.event.inputs.custom_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=${{ github.event.inputs.bump }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Execute version bump
+        run: |
+          chmod +x scripts/bump_version.sh
+          ./scripts/bump_version.sh "${{ steps.bump_target.outputs.target }}"
+
+      - name: Extract new version
+        id: new_version
+        run: |
+          VER=$(grep -E 'const Version = ' internal/daemon/daemon.go | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and Push Version Bump
+        run: |
+          git add -A
+          git commit -m "chore(release): bump version to ${{ steps.new_version.outputs.tag }}"
+          git push origin main
+
+      - name: Create and Push Git Tag
+        if: ${{ github.event.inputs.release == 'true' }}
+        run: |
+          git tag -a "${{ steps.new_version.outputs.tag }}" -m "Release ${{ steps.new_version.outputs.tag }}"
+          git push origin "${{ steps.new_version.outputs.tag }}"
+          echo "✓ Created and pushed tag ${{ steps.new_version.outputs.tag }}"
