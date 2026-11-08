@@ -82,7 +82,7 @@ func Discover(ctx context.Context, cfg Config) ([]ProcessService, error) {
 	}
 
 	seenEndpoints := make(map[string]bool)
-	var rawServices []ProcessService
+	rawServices := []ProcessService{}
 
 	for _, c := range conns {
 		if c.Status != "LISTEN" {
@@ -241,7 +241,12 @@ func checkHTTPService(ctx context.Context, s *ProcessService, cfg Config) {
 	}
 
 	// Detect framework heuristics
-	s.Framework = detectFramework(resp.Header, bodyStr, poweredBy, s.Cmdline)
+	s.Framework = detectFramework(
+		resp.Header,
+		bodyStr,
+		poweredBy,
+		s.Cmdline,
+	)
 }
 
 func detectFramework(headers http.Header, body, poweredBy, cmdline string) string {

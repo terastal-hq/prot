@@ -209,7 +209,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Management isolation check:
 	// Do not allow the dev proxy to reach daemon management endpoints
 	if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/mcp" {
-		http.Error(w, `{"error": "forbidden", "message": "Management endpoints are isolated and not accessible via reverse proxy"}`, http.StatusForbidden)
+		msg := `{"error": "forbidden", "message": "Management endpoints are isolated and not accessible via reverse proxy"}`
+		http.Error(w, msg, http.StatusForbidden)
 		return
 	}
 
@@ -221,10 +222,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head><title>prot — Route Not Found</title><style>
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 40px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+  padding: 40px;
+}
 h1 { color: #58a6ff; }
-.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; max-width: 600px; margin-top: 20px; }
-code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #f0883e; }
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 600px;
+  margin-top: 20px;
+}
+code {
+  background: #21262d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: #f0883e;
+}
 </style></head>
 <body>
 <h1>prot &mdash; Route Not Found</h1>
@@ -239,7 +258,8 @@ code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-family: m
 
 	// LAN exposure policy enforcement
 	if !route.LANExposed && !isLoopback(r.RemoteAddr) {
-		http.Error(w, `{"error": "forbidden", "message": "Service is private and not exposed to the local network"}`, http.StatusForbidden)
+		msg := `{"error": "forbidden", "message": "Service is private and not exposed to the local network"}`
+		http.Error(w, msg, http.StatusForbidden)
 		return
 	}
 
@@ -304,10 +324,28 @@ func (s *Server) errorHandler(w http.ResponseWriter, r *http.Request, err error)
 	_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head><title>prot — 502 Bad Gateway</title><style>
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 40px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+  padding: 40px;
+}
 h1 { color: #f85149; }
-.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; max-width: 600px; margin-top: 20px; }
-code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #79c0ff; }
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 600px;
+  margin-top: 20px;
+}
+code {
+  background: #21262d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: #79c0ff;
+}
 </style></head>
 <body>
 <h1>prot &mdash; 502 Bad Gateway</h1>
@@ -336,7 +374,7 @@ func singleJoiningSlash(a, b string) string {
 func (s *Server) Start() error {
 	ln, err := net.Listen("tcp", s.listenAddr)
 	if err != nil {
-		return fmt.Errorf("proxy failed to listen on %s: %w", s.listenAddr, err)
+		return fmt.Errorf("proxy failed to listen on %q: %w", s.listenAddr, err)
 	}
 	s.listener = ln
 	s.listenAddr = ln.Addr().String()

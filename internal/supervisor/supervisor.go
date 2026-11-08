@@ -118,6 +118,7 @@ type runningProcess struct {
 	mu           sync.RWMutex
 	svc          storage.Service
 	cmd          *exec.Cmd
+	ctx          context.Context
 	cancel       context.CancelFunc
 	state        ProcessState
 	logs         *LogRing
@@ -219,6 +220,7 @@ func (s *Supervisor) launchProcess(rp *runningProcess) error {
 
 	// Prepare command execution (using shell to support pipelines / flags)
 	ctx, cancel := context.WithCancel(context.Background())
+	rp.ctx = ctx
 	rp.cancel = cancel
 
 	fullCmd := svc.Command
@@ -275,7 +277,11 @@ func (s *Supervisor) monitorProcess(rp *runningProcess, cmd *exec.Cmd, port uint
 	// Probe readiness if port is known
 	if port > 0 {
 		go func() {
-			if waitForPortReady(port, 10*time.Second) {
+			rp.mu.RLock()
+			procCtx := rp.ctx
+			rp.mu.RUnlock()
+
+			if waitForPortReady(procCtx, port, 10*time.Second) {
 				rp.mu.Lock()
 				if rp.state.Status == "starting" {
 					rp.state.Status = "running"
@@ -331,7 +337,14 @@ func (s *Supervisor) monitorProcess(rp *runningProcess, cmd *exec.Cmd, port uint
 	shouldRestart := rp.svc.RestartPolicy == "always" || (rp.svc.RestartPolicy == "on-failure" && exitCode != 0)
 	if shouldRestart {
 		rp.state.RestartCount++
-		rp.logs.Append("system", fmt.Sprintf("Restart policy %q triggered; restarting in 1s (attempt %d)...", rp.svc.RestartPolicy, rp.state.RestartCount))
+		rp.logs.Append(
+			"system",
+			fmt.Sprintf(
+				"Restart policy %q triggered; restarting in 1s (attempt %d)...",
+				rp.svc.RestartPolicy,
+				rp.state.RestartCount,
+			),
+		)
 		rp.mu.Unlock()
 		if s.onStatus != nil {
 			s.onStatus(rp.svc.ID, "crashed", 0)
@@ -359,10 +372,15 @@ func captureOutput(r io.Reader, ring *LogRing, stream string) {
 	}
 }
 
-func waitForPortReady(port uint32, timeout time.Duration) bool {
+func waitForPortReady(ctx context.Context, port uint32, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
 		conn, err := net.DialTimeout("tcp", addr, 150*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
@@ -403,18 +421,27 @@ func (s *Supervisor) Stop(id string, timeout time.Duration) error {
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	}
 
-	// Wait up to timeout for process to exit
+	// Wait up to timeout for process to exit without leaking goroutine
 	done := make(chan struct{})
+	stopPolling := make(chan struct{})
+	defer close(stopPolling)
+
 	go func() {
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
 		for {
-			rp.mu.RLock()
-			st := rp.state.Status
-			rp.mu.RUnlock()
-			if st == "stopped" || st == "crashed" {
-				close(done)
+			select {
+			case <-stopPolling:
 				return
+			case <-ticker.C:
+				rp.mu.RLock()
+				st := rp.state.Status
+				rp.mu.RUnlock()
+				if st == "stopped" || st == "crashed" {
+					close(done)
+					return
+				}
 			}
-			time.Sleep(50 * time.Millisecond)
 		}
 	}()
 
@@ -433,6 +460,20 @@ func (s *Supervisor) Stop(id string, timeout time.Duration) error {
 	}
 
 	return nil
+}
+
+// StopAll terminates all running managed processes.
+func (s *Supervisor) StopAll(timeout time.Duration) {
+	s.mu.RLock()
+	ids := make([]string, 0, len(s.processes))
+	for id := range s.processes {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+
+	for _, id := range ids {
+		_ = s.Stop(id, timeout)
+	}
 }
 
 // Restart stops and restarts the process.

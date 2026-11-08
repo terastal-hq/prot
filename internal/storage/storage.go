@@ -86,7 +86,11 @@ func Open(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("creating db directory: %w", err)
 	}
 
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)", dbPath)
+	dsn := fmt.Sprintf(
+		"%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"+
+			"&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)",
+		dbPath,
+	)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite database: %w", err)
@@ -222,11 +226,25 @@ func (s *DB) SaveService(ctx context.Context, svc Service) error {
 		lanExposedInt = 1
 	}
 
-	_, err := s.db.ExecContext(ctx, query,
-		svc.ID, svc.Name, svc.Runtime, svc.Status, svc.Alias, svc.Command,
-		string(argsBytes), svc.Cwd, string(envBytes), svc.Port,
-		autoPortInt, autoStartInt, svc.RestartPolicy, lanExposedInt,
-		svc.CreatedAt.Format(time.RFC3339Nano), svc.UpdatedAt.Format(time.RFC3339Nano),
+	_, err := s.db.ExecContext(
+		ctx,
+		query,
+		svc.ID,
+		svc.Name,
+		svc.Runtime,
+		svc.Status,
+		svc.Alias,
+		svc.Command,
+		string(argsBytes),
+		svc.Cwd,
+		string(envBytes),
+		svc.Port,
+		autoPortInt,
+		autoStartInt,
+		svc.RestartPolicy,
+		lanExposedInt,
+		svc.CreatedAt.Format(time.RFC3339Nano),
+		svc.UpdatedAt.Format(time.RFC3339Nano),
 	)
 	return err
 }
@@ -261,7 +279,13 @@ func (s *DB) GetService(ctx context.Context, id string) (*Service, error) {
 	}
 
 	_ = json.Unmarshal([]byte(argsJSON), &svc.Args)
+	if svc.Args == nil {
+		svc.Args = []string{}
+	}
 	_ = json.Unmarshal([]byte(envJSON), &svc.Env)
+	if svc.Env == nil {
+		svc.Env = map[string]string{}
+	}
 	svc.AutoPort = autoPortInt == 1
 	svc.AutoStart = autoStartInt == 1
 	svc.LANExposed = lanExposedInt == 1
@@ -287,7 +311,7 @@ func (s *DB) ListServices(ctx context.Context) ([]Service, error) {
 	}
 	defer rows.Close()
 
-	var list []Service
+	list := []Service{}
 	for rows.Next() {
 		var svc Service
 		var argsJSON, envJSON, createdAtStr, updatedAtStr string
@@ -304,7 +328,13 @@ func (s *DB) ListServices(ctx context.Context) ([]Service, error) {
 		}
 
 		_ = json.Unmarshal([]byte(argsJSON), &svc.Args)
+		if svc.Args == nil {
+			svc.Args = []string{}
+		}
 		_ = json.Unmarshal([]byte(envJSON), &svc.Env)
+		if svc.Env == nil {
+			svc.Env = map[string]string{}
+		}
 		svc.AutoPort = autoPortInt == 1
 		svc.AutoStart = autoStartInt == 1
 		svc.LANExposed = lanExposedInt == 1
@@ -375,9 +405,19 @@ func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
 		auto_connect=excluded.auto_connect;
 	`
 
-	_, err := s.db.ExecContext(ctx, query,
-		tun.ID, tun.Alias, tun.SSHHost, tun.SSHUser, tun.RemoteHost, tun.RemotePort,
-		tun.LocalPort, tun.IdentityFile, string(extraArgsBytes), autoConnectInt,
+	_, err := s.db.ExecContext(
+		ctx,
+		query,
+		tun.ID,
+		tun.Alias,
+		tun.SSHHost,
+		tun.SSHUser,
+		tun.RemoteHost,
+		tun.RemotePort,
+		tun.LocalPort,
+		tun.IdentityFile,
+		string(extraArgsBytes),
+		autoConnectInt,
 		tun.CreatedAt.Format(time.RFC3339Nano),
 	)
 	return err
@@ -398,7 +438,7 @@ func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 	}
 	defer rows.Close()
 
-	var list []Tunnel
+	list := []Tunnel{}
 	for rows.Next() {
 		var tun Tunnel
 		var extraArgsJSON, createdAtStr string
@@ -413,6 +453,9 @@ func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 		}
 
 		_ = json.Unmarshal([]byte(extraArgsJSON), &tun.ExtraArgs)
+		if tun.ExtraArgs == nil {
+			tun.ExtraArgs = []string{}
+		}
 		tun.AutoConnect = autoConnectInt == 1
 		tun.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAtStr)
 		list = append(list, tun)
@@ -443,9 +486,13 @@ func (s *DB) LogEvent(ctx context.Context, eventType, serviceID, payload string)
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(ctx,
+	_, err := s.db.ExecContext(
+		ctx,
 		"INSERT INTO event_logs (timestamp, event_type, service_id, payload) VALUES (?, ?, ?, ?)",
-		now, eventType, serviceID, payload,
+		now,
+		eventType,
+		serviceID,
+		payload,
 	)
 	return err
 }
@@ -468,7 +515,7 @@ func (s *DB) GetRecentEvents(ctx context.Context, limit int) ([]EventLog, error)
 	}
 	defer rows.Close()
 
-	var events []EventLog
+	events := []EventLog{}
 	for rows.Next() {
 		var ev EventLog
 		var tsStr string

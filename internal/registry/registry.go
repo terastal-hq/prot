@@ -406,21 +406,32 @@ func (r *Registry) RestartService(ctx context.Context, idOrAlias string) (*Servi
 	return &view, nil
 }
 
+// AdoptOptions specifies parameters for adopting a discovered service.
+type AdoptOptions struct {
+	DiscoveryID string
+	Name        string
+	Alias       string
+	Command     string
+}
+
 // AdoptDiscovered converts an observed discovery item into a managed service.
-func (r *Registry) AdoptDiscovered(ctx context.Context, discoveryID, name, alias, command string) (*ServiceView, error) {
+func (r *Registry) AdoptDiscovered(ctx context.Context, opts AdoptOptions) (*ServiceView, error) {
 	r.mu.RLock()
-	disc, ok := r.discovered[discoveryID]
+	disc, ok := r.discovered[opts.DiscoveryID]
 	r.mu.RUnlock()
 	if !ok {
 		return nil, errors.New("discovered service not found or expired")
 	}
 
+	name := opts.Name
 	if name == "" {
 		name = disc.Name
 		if name == "" {
 			name = fmt.Sprintf("Service on :%d", disc.Port)
 		}
 	}
+
+	alias := opts.Alias
 	if alias == "" {
 		alias = disc.Name
 	}
@@ -431,7 +442,7 @@ func (r *Registry) AdoptDiscovered(ctx context.Context, discoveryID, name, alias
 		Runtime:       "managed",
 		Status:        "running",
 		Alias:         alias,
-		Command:       command,
+		Command:       opts.Command,
 		Cwd:           disc.Cwd,
 		Port:          disc.Port,
 		AutoPort:      false,
@@ -442,8 +453,8 @@ func (r *Registry) AdoptDiscovered(ctx context.Context, discoveryID, name, alias
 }
 
 // GetLogs returns captured logs for a service.
-func (r *Registry) GetLogs(idOrAlias string, limit int) ([]supervisor.LogEntry, error) {
-	id, err := r.resolveServiceID(context.Background(), idOrAlias)
+func (r *Registry) GetLogs(ctx context.Context, idOrAlias string, limit int) ([]supervisor.LogEntry, error) {
+	id, err := r.resolveServiceID(ctx, idOrAlias)
 	if err != nil {
 		return nil, err
 	}
@@ -451,12 +462,17 @@ func (r *Registry) GetLogs(idOrAlias string, limit int) ([]supervisor.LogEntry, 
 }
 
 // FollowLogs returns a subscription channel for streaming service logs.
-func (r *Registry) FollowLogs(idOrAlias string) (<-chan supervisor.LogEntry, func(), error) {
-	id, err := r.resolveServiceID(context.Background(), idOrAlias)
+func (r *Registry) FollowLogs(ctx context.Context, idOrAlias string) (<-chan supervisor.LogEntry, func(), error) {
+	id, err := r.resolveServiceID(ctx, idOrAlias)
 	if err != nil {
 		return nil, nil, err
 	}
 	return r.supervisor.FollowLogs(id)
+}
+
+// StopAll terminates all running managed processes.
+func (r *Registry) StopAll(timeout time.Duration) {
+	r.supervisor.StopAll(timeout)
 }
 
 // ListDiscovered returns all currently observed local TCP processes.

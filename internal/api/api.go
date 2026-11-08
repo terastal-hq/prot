@@ -232,7 +232,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ch, unsub, err := s.reg.FollowLogs(id)
+		ch, unsub, err := s.reg.FollowLogs(r.Context(), id)
 		if err != nil {
 			jsonErr(w, http.StatusNotFound, err.Error())
 			return
@@ -240,7 +240,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		defer unsub()
 
 		// Stream existing history first
-		history, _ := s.reg.GetLogs(id, limit)
+		history, _ := s.reg.GetLogs(r.Context(), id, limit)
 		for _, entry := range history {
 			data, _ := json.Marshal(entry)
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(data))
@@ -262,7 +262,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logs, err := s.reg.GetLogs(id, limit)
+	logs, err := s.reg.GetLogs(r.Context(), id, limit)
 	if err != nil {
 		jsonErr(w, http.StatusNotFound, err.Error())
 		return
@@ -291,7 +291,12 @@ func (s *Server) handleAdoptDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	view, err := s.reg.AdoptDiscovered(r.Context(), id, req.Name, req.Alias, req.Command)
+	view, err := s.reg.AdoptDiscovered(r.Context(), registry.AdoptOptions{
+		DiscoveryID: id,
+		Name:        req.Name,
+		Alias:       req.Alias,
+		Command:     req.Command,
+	})
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -334,7 +339,7 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
-	var list []tunnels.TunnelStatus
+	list := []tunnels.TunnelStatus{}
 	if s.tunnelsMgr != nil {
 		list = s.tunnelsMgr.List()
 	}

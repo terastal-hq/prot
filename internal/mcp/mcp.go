@@ -127,8 +127,9 @@ func (s *Server) HandleRequest(ctx context.Context, req JSONRPCRequest) *JSONRPC
 func (s *Server) listTools() []Tool {
 	return []Tool{
 		{
-			Name:        "list_services",
-			Description: "Discover and list all registered managed services and currently observed local TCP development services.",
+			Name: "list_services",
+			Description: "Discover and list all registered managed services and currently " +
+				"observed local TCP development services.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 			},
@@ -155,9 +156,12 @@ func (s *Server) listTools() []Tool {
 			Name:        "get_service_logs",
 			Description: "Retrieve bounded recent logs (stdout/stderr) for a managed service.",
 			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"required":   []string{"id_or_alias"},
-				"properties": map[string]interface{}{"id_or_alias": map[string]string{"type": "string"}, "limit": map[string]string{"type": "integer"}},
+				"type":     "object",
+				"required": []string{"id_or_alias"},
+				"properties": map[string]interface{}{
+					"id_or_alias": map[string]string{"type": "string"},
+					"limit":       map[string]string{"type": "integer"},
+				},
 			},
 		},
 		{
@@ -200,9 +204,12 @@ func (s *Server) listTools() []Tool {
 			Name:        "set_alias",
 			Description: "Map or update a .localhost alias for a service.",
 			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"required":   []string{"alias", "target_url"},
-				"properties": map[string]interface{}{"alias": map[string]string{"type": "string"}, "target_url": map[string]string{"type": "string"}},
+				"type":     "object",
+				"required": []string{"alias", "target_url"},
+				"properties": map[string]interface{}{
+					"alias":      map[string]string{"type": "string"},
+					"target_url": map[string]string{"type": "string"},
+				},
 			},
 		},
 	}
@@ -249,7 +256,7 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		if err != nil {
 			return nil, err
 		}
-		logs, err := s.reg.GetLogs(svc.ID, limit)
+		logs, err := s.reg.GetLogs(ctx, svc.ID, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -267,13 +274,32 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 			return nil, err
 		}
 		if svc.Status == "running" {
-			return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Service %s is already running at %s", svc.Name, svc.CanonicalURL)}}}, nil
+			return &ToolResult{
+				Content: []TextContent{
+					{
+						Type: "text",
+						Text: fmt.Sprintf("Service %s is already running at %s", svc.Name, svc.CanonicalURL),
+					},
+				},
+			}, nil
 		}
 		started, err := s.reg.StartService(ctx, svc.ID)
 		if err != nil {
 			return nil, err
 		}
-		return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Service %s started (status: %s, URL: %s)", started.Name, started.Status, started.CanonicalURL)}}}, nil
+		return &ToolResult{
+			Content: []TextContent{
+				{
+					Type: "text",
+					Text: fmt.Sprintf(
+						"Service %s started (status: %s, URL: %s)",
+						started.Name,
+						started.Status,
+						started.CanonicalURL,
+					),
+				},
+			},
+		}, nil
 
 	case "start_service":
 		id, _ := args["id"].(string)
@@ -281,7 +307,14 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		if err != nil {
 			return nil, err
 		}
-		return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Started service %s (%s)", started.Name, started.Status)}}}, nil
+		return &ToolResult{
+			Content: []TextContent{
+				{
+					Type: "text",
+					Text: fmt.Sprintf("Started service %s (%s)", started.Name, started.Status),
+				},
+			},
+		}, nil
 
 	case "stop_service":
 		id, _ := args["id"].(string)
@@ -289,7 +322,14 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		if err != nil {
 			return nil, err
 		}
-		return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Stopped service %s", stopped.Name)}}}, nil
+		return &ToolResult{
+			Content: []TextContent{
+				{
+					Type: "text",
+					Text: fmt.Sprintf("Stopped service %s", stopped.Name),
+				},
+			},
+		}, nil
 
 	case "restart_service":
 		id, _ := args["id"].(string)
@@ -297,7 +337,14 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		if err != nil {
 			return nil, err
 		}
-		return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Restarted service %s (%s)", restarted.Name, restarted.Status)}}}, nil
+		return &ToolResult{
+			Content: []TextContent{
+				{
+					Type: "text",
+					Text: fmt.Sprintf("Restarted service %s (%s)", restarted.Name, restarted.Status),
+				},
+			},
+		}, nil
 
 	case "set_alias":
 		alias, _ := args["alias"].(string)
@@ -317,10 +364,17 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		if err != nil {
 			return nil, err
 		}
-		return &ToolResult{Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Alias mapped: http://%s.localhost -> %s", alias, targetURL)}}}, nil
+		return &ToolResult{
+			Content: []TextContent{
+				{
+					Type: "text",
+					Text: fmt.Sprintf("Alias mapped: http://%s.localhost -> %s", alias, targetURL),
+				},
+			},
+		}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown tool: %s", name)
+		return nil, fmt.Errorf("unknown tool: %q", name)
 	}
 }
 

@@ -284,7 +284,8 @@ func cmdInspect(args []string) {
 
 func cmdAdd(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot add <name> --cmd \"<command>\" [--alias <alias>] [--port <port>] [--cwd <path>] [--auto-port]")
+		fmt.Println("Usage: prot add <name> --cmd \"<command>\" " +
+			"[--alias <alias>] [--port <port>] [--cwd <path>] [--auto-port]")
 		os.Exit(1)
 	}
 

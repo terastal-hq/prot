@@ -116,7 +116,12 @@ func TestRegistryAdoptDiscovered(t *testing.T) {
 	}
 	reg.SetDiscovered([]discovery.ProcessService{disc})
 
-	adopted, err := reg.AdoptDiscovered(context.Background(), "disc-1", "Vite App", "app", "npm run dev")
+	adopted, err := reg.AdoptDiscovered(context.Background(), AdoptOptions{
+		DiscoveryID: "disc-1",
+		Name:        "Vite App",
+		Alias:       "app",
+		Command:     "npm run dev",
+	})
 	if err != nil {
 		t.Fatalf("AdoptDiscovered failed: %v", err)
 	}

@@ -131,7 +131,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			host = h
 		}
 		host = strings.ToLower(strings.TrimSpace(host))
-		if host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "[::1]" {
+		if !isAllowedManagementHost(host) {
 			http.Error(w, `{"error":"forbidden","message":"DNS rebinding attempt blocked"}`, http.StatusForbidden)
 			return
 		}
@@ -152,6 +152,13 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isAllowedManagementHost(host string) bool {
+	isLocalhost := host == "localhost"
+	isIPv4Loopback := host == "127.0.0.1"
+	isIPv6Loopback := host == "::1" || host == "[::1]"
+	return isLocalhost || isIPv4Loopback || isIPv6Loopback
 }
 
 func extractToken(r *http.Request) string {

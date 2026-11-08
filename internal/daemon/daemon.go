@@ -78,7 +78,7 @@ func New(cfg Config) (*Daemon, error) {
 	dbPath := filepath.Join(cfg.DataDir, "prot.db")
 	db, err := storage.Open(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("opening database at %s: %w", dbPath, err)
+		return nil, fmt.Errorf("opening database at %q: %w", dbPath, err)
 	}
 
 	// 2. Initialize Security Authenticator
@@ -225,6 +225,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		<-d.discTickerDone
 	}
 
+	// Gracefully stop all running supervised child processes
+	if d.reg != nil {
+		d.reg.StopAll(2 * time.Second)
+	}
+
 	if d.adminSrv != nil {
 		_ = d.adminSrv.Shutdown(ctx)
 	}
@@ -292,7 +297,7 @@ func (d *Daemon) discoveryLoop(ctx context.Context) {
 }
 
 func (d *Daemon) runDiscovery(ctx context.Context) {
-	var ignorePorts []uint32
+	ignorePorts := []uint32{}
 	if _, portStr, err := net.SplitHostPort(d.ProxyAddr()); err == nil {
 		var p uint32
 		if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {

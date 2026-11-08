@@ -204,24 +204,23 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 		}
 
 		err := m.runOnce(ctx, st)
-		if err != nil && ctx.Err() == nil {
-			m.mu.Lock()
-			st.status.LastError = err.Error()
-			st.status.State = StateReconnecting
-			st.status.Reconnections++
-			m.mu.Unlock()
+		if err == nil || ctx.Err() != nil {
+			return
+		}
 
-			select {
-			case <-time.After(backoff):
-				backoff *= 2
-				if backoff > maxBackoff {
-					backoff = maxBackoff
-				}
-			case <-ctx.Done():
-				return
+		m.mu.Lock()
+		st.status.LastError = err.Error()
+		st.status.State = StateReconnecting
+		st.status.Reconnections++
+		m.mu.Unlock()
+
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
 			}
-		} else {
-			// Normal exit or stopped
+		case <-ctx.Done():
 			return
 		}
 	}
