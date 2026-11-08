@@ -68,7 +68,13 @@ export function App() {
   };
 
   useEffect(() => {
-    refreshData();
+    const initApp = async () => {
+      await client.init();
+      setAuthToken(client.getToken());
+      setAdminUrl(client.getBaseUrl());
+      await refreshData();
+    };
+    initApp();
     const interval = setInterval(refreshData, 3000);
     return () => clearInterval(interval);
   }, []);

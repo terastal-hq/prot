@@ -9,6 +9,28 @@ export class ProtClient {
     this.token = localStorage.getItem("prot_token") || "";
   }
 
+  async init() {
+    const tauri = (window as any).__TAURI__;
+    if (tauri?.core?.invoke) {
+      try {
+        const token = await tauri.core.invoke("get_auth_token");
+        if (token && typeof token === "string") {
+          this.setToken(token);
+        }
+      } catch {
+        // Fallback to localStorage
+      }
+      try {
+        const url = await tauri.core.invoke("get_admin_url");
+        if (url && typeof url === "string") {
+          this.setBaseUrl(url);
+        }
+      } catch {
+        // Fallback to localStorage
+      }
+    }
+  }
+
   setBaseUrl(url: string) {
     this.baseUrl = url;
     localStorage.setItem("prot_admin_url", url);

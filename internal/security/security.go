@@ -113,6 +113,16 @@ func (a *Authenticator) VerifyToken(candidate string) bool {
 // 3. Bearer token authentication
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS headers for first-party desktop UI and local clients
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Prot-Key")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		// 1. Loopback check
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
