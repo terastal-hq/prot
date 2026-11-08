@@ -899,7 +899,10 @@ code {
   line-height: 1.5;
   color: var(--phosphor);
   text-shadow: 0 0 5px rgba(126, 173, 118, 0.5);
-  overflow-x: auto;
+  flex-shrink: 0;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-all;
   user-select: text;
 }
 
