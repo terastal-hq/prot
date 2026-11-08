@@ -120,6 +120,7 @@ Add to your MCP configuration file (e.g. `claude_desktop_config.json`):
 ## Documentation
 
 - **[Installation Guide](docs/installation.md)** — One-line installer, binary packages, background service management.
+- **[Window Managers](docs/window-managers.md)** — Floating rules for niri, sway, i3 and Hyprland.
 - **[Platform Support Matrix](docs/support-matrix.md)** — Operating system tiers and hardware capabilities.
 - **[OpenAPI Specification](schemas/openapi.yaml)** — Complete REST API contract.
 

@@ -13,11 +13,13 @@
       {
         "title": "prot",
         "width": 440,
-        "height": 780,
+        "height": 720,
         "resizable": true,
         "fullscreen": false,
         "minWidth": 380,
-        "minHeight": 560
+        "minHeight": 560,
+        "maxWidth": 520,
+        "maxHeight": 900
       }
     ],
     "security": {
