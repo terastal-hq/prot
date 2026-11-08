@@ -8,18 +8,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/terastal-hq/prot/internal/api"
 	"github.com/terastal-hq/prot/internal/discovery"
+	"github.com/terastal-hq/prot/internal/mcp"
 	"github.com/terastal-hq/prot/internal/proxy"
+	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/security"
+	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
 // Version of the prot daemon.
-const Version = "0.1.0-m0"
+const Version = "0.1.0"
 
 // Config contains runtime configuration for protd.
 type Config struct {
@@ -41,15 +44,18 @@ func DefaultConfig() Config {
 // Daemon represents the long-running prot background daemon.
 type Daemon struct {
 	cfg        Config
+	db         *storage.DB
 	auth       *security.Authenticator
 	router     *proxy.Router
 	proxySrv   *proxy.Server
 	tunnelsMgr *tunnels.Manager
+	reg        *registry.Registry
+	apiSrv     *api.Server
+	mcpSrv     *mcp.Server
 	adminSrv   *http.Server
 	adminLn    net.Listener
 
 	mu             sync.RWMutex
-	discovered     []discovery.ProcessService
 	discCancel     context.CancelFunc
 	discTickerDone chan struct{}
 }
@@ -68,29 +74,66 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, fmt.Errorf("creating data dir: %w", err)
 	}
 
+	// 1. Initialize SQLite Database (WAL mode)
+	dbPath := filepath.Join(cfg.DataDir, "prot.db")
+	db, err := storage.Open(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening database at %s: %w", dbPath, err)
+	}
+
+	// 2. Initialize Security Authenticator
 	tokenPath := filepath.Join(cfg.DataDir, "auth.token")
 	auth, err := security.NewAuthenticator(security.Config{TokenPath: tokenPath})
 	if err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("initializing security: %w", err)
 	}
 
-	tunMgr, err := tunnels.NewManager()
-	if err != nil {
-		// Log or tolerate if ssh binary not found in restricted environments
-		tunMgr = nil
-	}
+	// 3. Initialize OpenSSH Tunnel Manager
+	tunMgr, _ := tunnels.NewManager()
 
+	// 4. Initialize Dynamic Reverse Proxy Router & Server
 	router := proxy.NewRouter()
 	proxySrv := proxy.NewServer(router, proxy.ServerOptions{
 		ListenAddr: cfg.GatewayAddr,
 	})
 
+	// Extract gateway port for canonical URLs
+	_, gwPort, _ := net.SplitHostPort(cfg.GatewayAddr)
+	if gwPort == "" {
+		gwPort = "8080"
+	}
+
+	// 5. Initialize Central Unified Registry
+	reg := registry.New(registry.Config{
+		DB:          db,
+		Router:      router,
+		Tunnels:     tunMgr,
+		GatewayHost: gwPort,
+	})
+
+	// 6. Initialize REST API Server & MCP Server
+	apiSrv := api.NewServer(api.Config{
+		Registry:    reg,
+		Router:      router,
+		Tunnels:     tunMgr,
+		Version:     Version,
+		GatewayAddr: cfg.GatewayAddr,
+		AdminAddr:   cfg.AdminAddr,
+	})
+
+	mcpSrv := mcp.NewServer(reg)
+
 	d := &Daemon{
 		cfg:        cfg,
+		db:         db,
 		auth:       auth,
 		router:     router,
 		proxySrv:   proxySrv,
 		tunnelsMgr: tunMgr,
+		reg:        reg,
+		apiSrv:     apiSrv,
+		mcpSrv:     mcpSrv,
 	}
 
 	return d, nil
@@ -103,10 +146,22 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return fmt.Errorf("starting proxy server: %w", err)
 	}
 
-	// 2. Setup loopback Admin Management API
-	adminMux := http.NewServeMux()
-	d.registerAdminRoutes(adminMux)
+	// 2. Recover persisted services and routes from SQLite
+	if err := d.recoverState(ctx); err != nil {
+		// Log but don't prevent startup
+		fmt.Fprintf(os.Stderr, "Warning during state recovery: %v\n", err)
+	}
 
+	// 3. Setup loopback Admin Management API (combining REST API and /mcp)
+	adminMux := http.NewServeMux()
+
+	// Mount REST API
+	adminMux.Handle("/v1/", d.apiSrv.Handler())
+
+	// Mount Streamable HTTP MCP
+	adminMux.HandleFunc("POST /mcp", d.mcpSrv.ServeHTTP)
+
+	// Apply loopback enforcement, DNS rebinding protection, and token authentication
 	securedHandler := d.auth.Middleware(adminMux)
 
 	adminLn, err := net.Listen("tcp", d.cfg.AdminAddr)
@@ -125,18 +180,39 @@ func (d *Daemon) Start(ctx context.Context) error {
 		_ = d.adminSrv.Serve(adminLn)
 	}()
 
-	// 3. Write daemon state metadata file (pid, ports, token path) for clients
+	// 4. Write daemon state metadata file (pid, ports, token) for clients
 	if err := d.writeStateFile(); err != nil {
 		_ = d.Stop(ctx)
 		return fmt.Errorf("writing daemon state file: %w", err)
 	}
 
-	// 4. Start background discovery ticker
+	// 5. Start background discovery ticker
 	discCtx, cancel := context.WithCancel(ctx)
 	d.discCancel = cancel
 	d.discTickerDone = make(chan struct{})
 	go d.discoveryLoop(discCtx)
 
+	return nil
+}
+
+func (d *Daemon) recoverState(ctx context.Context) error {
+	savedServices, err := d.db.ListServices(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range savedServices {
+		// Re-register route in proxy router if port and alias exist
+		if s.Alias != "" && s.Port > 0 {
+			targetURL := fmt.Sprintf("http://127.0.0.1:%d", s.Port)
+			_ = d.router.SetRoute(s.Alias, targetURL, s.LANExposed)
+		}
+
+		// Auto-start services if configured
+		if s.AutoStart && s.Command != "" {
+			_, _ = d.reg.StartService(ctx, s.ID)
+		}
+	}
 	return nil
 }
 
@@ -157,6 +233,10 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		_ = d.proxySrv.Close(ctx)
 	}
 
+	if d.db != nil {
+		_ = d.db.Close()
+	}
+
 	// Remove state file
 	statePath := filepath.Join(d.cfg.DataDir, "daemon.json")
 	_ = os.Remove(statePath)
@@ -167,6 +247,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 // Router returns the dynamic proxy router.
 func (d *Daemon) Router() *proxy.Router {
 	return d.router
+}
+
+// Registry returns the unified registry.
+func (d *Daemon) Registry() *registry.Registry {
+	return d.reg
 }
 
 // ProxyAddr returns the bound proxy address.
@@ -185,79 +270,6 @@ func (d *Daemon) AdminAddr() string {
 // Token returns the current auth token.
 func (d *Daemon) Token() string {
 	return d.auth.Token()
-}
-
-func (d *Daemon) registerAdminRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":       "ok",
-			"version":      Version,
-			"pid":          os.Getpid(),
-			"gateway_addr": d.ProxyAddr(),
-			"admin_addr":   d.AdminAddr(),
-			"timestamp":    time.Now().UTC(),
-		})
-	})
-
-	mux.HandleFunc("GET /v1/discovery", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.RLock()
-		services := d.discovered
-		d.mu.RUnlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"services": services,
-			"count":    len(services),
-		})
-	})
-
-	mux.HandleFunc("GET /v1/routes", func(w http.ResponseWriter, r *http.Request) {
-		routes := d.router.ListRoutes()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"routes": routes,
-			"count":  len(routes),
-		})
-	})
-
-	mux.HandleFunc("POST /v1/routes", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Alias      string `json:"alias"`
-			TargetURL  string `json:"target_url"`
-			LANExposed bool   `json:"lan_exposed"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
-			return
-		}
-		if err := d.router.SetRoute(req.Alias, req.TargetURL, req.LANExposed); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
-			return
-		}
-		rt, _ := d.router.GetRoute(req.Alias)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(rt)
-	})
-
-	mux.HandleFunc("DELETE /v1/routes/{alias}", func(w http.ResponseWriter, r *http.Request) {
-		alias := strings.TrimPrefix(r.URL.Path, "/v1/routes/")
-		d.router.RemoveRoute(alias)
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	mux.HandleFunc("GET /v1/tunnels", func(w http.ResponseWriter, r *http.Request) {
-		var list []tunnels.TunnelStatus
-		if d.tunnelsMgr != nil {
-			list = d.tunnelsMgr.List()
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"tunnels": list,
-			"count":   len(list),
-		})
-	})
 }
 
 func (d *Daemon) discoveryLoop(ctx context.Context) {
@@ -280,7 +292,6 @@ func (d *Daemon) discoveryLoop(ctx context.Context) {
 }
 
 func (d *Daemon) runDiscovery(ctx context.Context) {
-	// Exclude our own daemon listeners from discovery
 	var ignorePorts []uint32
 	if _, portStr, err := net.SplitHostPort(d.ProxyAddr()); err == nil {
 		var p uint32
@@ -304,9 +315,7 @@ func (d *Daemon) runDiscovery(ctx context.Context) {
 		return
 	}
 
-	d.mu.Lock()
-	d.discovered = services
-	d.mu.Unlock()
+	d.reg.SetDiscovered(services)
 }
 
 type daemonState struct {

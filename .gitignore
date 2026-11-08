@@ -19,12 +19,17 @@ daemon.json
 
 # Node & Frontend
 node_modules/
+**/node_modules/
 dist/
+**/dist/
 dist-ssr/
 *.local
 
 # Rust & Tauri
-src-tauri/target/
+target/
+**/target/
+gen/
+**/gen/
 
 # OS / Editor
 .DS_Store

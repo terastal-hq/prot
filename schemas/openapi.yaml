@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: prot Control Plane API
+  description: Local development service manager and control plane API.
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:4400
+    description: Authenticated loopback management listener
+paths:
+  /v1/health:
+    get:
+      summary: Read daemon health and versions
+      responses:
+        "200":
+          description: Daemon is healthy
+  /v1/events:
+    get:
+      summary: Stream daemon events via Server-Sent Events (SSE)
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream: {}
+  /v1/services:
+    get:
+      summary: List registered and running services
+      responses:
+        "200":
+          description: List of services
+    post:
+      summary: Register a new managed service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, command]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                alias: { type: string }
+                command: { type: string }
+                args: { type: array, items: { type: string } }
+                cwd: { type: string }
+                env: { type: object, additionalProperties: { type: string } }
+                port: { type: integer }
+                auto_port: { type: boolean }
+                restart_policy: { type: string, enum: [no, always, on-failure] }
+                lan_exposed: { type: boolean }
+      responses:
+        "201":
+          description: Service registered
+  /v1/services/{id}:
+    get:
+      summary: Read service details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Service details }
+        "404": { description: Not found }
+    delete:
+      summary: Remove service registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Service deleted }
+  /v1/services/{id}/start:
+    post:
+      summary: Start a managed service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Service started }
+  /v1/services/{id}/stop:
+    post:
+      summary: Stop a managed service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Service stopped }
+  /v1/services/{id}/restart:
+    post:
+      summary: Restart a managed service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Service restarted }
+  /v1/services/{id}/logs:
+    get:
+      summary: Retrieve recent logs or stream live logs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: follow
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200": { description: Service logs }
+  /v1/discovery:
+    get:
+      summary: List observed TCP processes and HTTP services
+      responses:
+        "200": { description: Discovered processes }
+  /v1/discovery/{id}/adopt:
+    post:
+      summary: Adopt an observed service into a managed service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                alias: { type: string }
+                command: { type: string }
+      responses:
+        "201": { description: Adopted into managed service }
+  /v1/routes:
+    get:
+      summary: List active reverse proxy routes
+      responses:
+        "200": { description: List of routes }
+    post:
+      summary: Map an alias to an upstream target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias, target_url]
+              properties:
+                alias: { type: string }
+                target_url: { type: string }
+                lan_exposed: { type: boolean }
+      responses:
+        "201": { description: Route created }
+  /v1/routes/{alias}:
+    delete:
+      summary: Remove a route
+      parameters:
+        - name: alias
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Route removed }
+  /v1/tunnels:
+    get:
+      summary: List SSH tunnels
+      responses:
+        "200": { description: List of tunnels }
+    post:
+      summary: Register an SSH tunnel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, alias, ssh_host, remote_port]
+              properties:
+                id: { type: string }
+                alias: { type: string }
+                ssh_host: { type: string }
+                ssh_user: { type: string }
+                remote_host: { type: string, default: "127.0.0.1" }
+                remote_port: { type: integer }
+                local_port: { type: integer, default: 0 }
+                auto_connect: { type: boolean }
+      responses:
+        "201": { description: Tunnel registered }
