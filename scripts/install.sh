@@ -112,12 +112,13 @@ else
 fi
 
 # 4. Desktop binary and icons (if available)
+if [ ! -f "apps/desktop/src-tauri/target/release/prot-desktop" ] && [ -d "apps/desktop" ] && command -v cargo >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    echo -e "\n${CYAN}Building standalone desktop app (release mode)...${NC}"
+    (cd apps/desktop && npm run build && cd src-tauri && cargo build --release)
+fi
+
 if [ -f "apps/desktop/src-tauri/target/release/prot-desktop" ]; then
     cp -f "apps/desktop/src-tauri/target/release/prot-desktop" "$INSTALL_DIR/prot-desktop"
-    chmod +x "$INSTALL_DIR/prot-desktop"
-    echo -e "${GREEN}✓ Desktop binary installed: $INSTALL_DIR/prot-desktop${NC}"
-elif [ -f "apps/desktop/src-tauri/target/debug/prot-desktop" ]; then
-    cp -f "apps/desktop/src-tauri/target/debug/prot-desktop" "$INSTALL_DIR/prot-desktop"
     chmod +x "$INSTALL_DIR/prot-desktop"
     echo -e "${GREEN}✓ Desktop binary installed: $INSTALL_DIR/prot-desktop${NC}"
 fi
