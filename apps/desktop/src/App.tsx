@@ -6,6 +6,7 @@ import wordmark from "./assets/wordmark.png";
 import "./App.css";
 
 type Tab = "servers" | "found" | "tunnels" | "settings";
+type NavTab = Exclude<Tab, "settings">;
 type Kind = "run" | "busy" | "idle" | "crash";
 
 const LABELS: Record<Kind, string> = { run: "RUNNING", busy: "STARTING", idle: "IDLE", crash: "CRASHED" };
@@ -36,6 +37,25 @@ function tunnelKind(state: TunnelStatus["state"]): Kind {
     default:
       return "idle";
   }
+}
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+      <defs>
+        <linearGradient id="gear-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff2a0" />
+          <stop offset="0.45" stopColor="#fb8808" />
+          <stop offset="0.55" stopColor="#d86800" />
+          <stop offset="1" stopColor="#f5a020" />
+        </linearGradient>
+      </defs>
+      <path d="M20.07 10.53 L23.12 10.68 L23.12 13.32 L20.07 13.47 L18.75 16.66 L20.80 18.93 L18.93 20.80 L16.66 18.75 L13.47 20.07 L13.32 23.12 L10.68 23.12 L10.53 20.07 L7.34 18.75 L5.07 20.80 L3.20 18.93 L5.25 16.66 L3.93 13.47 L0.88 13.32 L0.88 10.68 L3.93 10.53 L5.25 7.34 L3.20 5.07 L5.07 3.20 L7.34 5.25 L10.53 3.93 L10.68 0.88 L13.32 0.88 L13.47 3.93 L16.66 5.25 L18.93 3.20 L20.80 5.07 L18.75 7.34 Z" fill="url(#gear-fill)" stroke="#000" strokeWidth="1.4" strokeLinejoin="miter" />
+      <circle cx="12" cy="12" r="5.2" fill="none" stroke="#000" strokeWidth="1" opacity="0.55" />
+      <circle cx="12" cy="12" r="3.3" fill="#000" />
+      <circle cx="12" cy="12" r="1.5" fill="#5af451" />
+    </svg>
+  );
 }
 
 function Status({ kind, text }: { kind: Kind; text?: string }) {
@@ -88,7 +108,13 @@ function Field(props: {
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("servers");
+  const [tab, setTabState] = useState<Tab>("servers");
+  const lastTab = useRef<NavTab>("servers");
+  const setTab = (t: Tab) => {
+    if (t !== "settings") lastTab.current = t;
+    setTabState(t);
+  };
+  const [query, setQuery] = useState("");
   const [health, setHealth] = useState<DaemonHealth | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [services, setServices] = useState<ServiceView[]>([]);
@@ -249,6 +275,15 @@ export function App() {
 
   const mcpConfigSnippet = JSON.stringify({ mcpServers: { prot: { command: "prot", args: ["mcp"] } } }, null, 2);
 
+  const q = query.trim().toLowerCase();
+  const filteredDiscovered = q
+    ? discovered.filter((d) =>
+        [d.name, d.exe, d.cmdline, d.framework, d.page_title, d.http_server, d.cwd, String(d.port), String(d.pid)]
+          .filter(Boolean)
+          .some((f) => String(f).toLowerCase().includes(q)),
+      )
+    : discovered;
+
   const running = services.filter((s) => s.status === "running").length;
   const crashed = services.filter((s) => s.status === "crashed" || s.status === "unhealthy").length;
   const idle = services.length - running - crashed;
@@ -276,9 +311,15 @@ export function App() {
             <span className="sq" aria-hidden="true" />
             {isOnline ? "DAEMON ACTIVE" : "DAEMON OFFLINE"}
           </span>
-          <span className="burst" aria-hidden="true">
-            {health ? `v${health.version}` : "prot"}
-          </span>
+          <button
+            className={`burst ${tab === "settings" ? "pressed" : ""}`}
+            title="Settings"
+            aria-label="Settings"
+            aria-pressed={tab === "settings"}
+            onClick={() => (tab === "settings" ? setTab(lastTab.current) : setTab("settings"))}
+          >
+            <GearIcon />
+          </button>
         </div>
       </header>
 
@@ -373,10 +414,33 @@ export function App() {
           <>
             <div className="screen-title">
               <h1>found</h1>
-              <span className="label">{discovered.length} LISTENING</span>
+              <span className="label">
+                {q ? `${filteredDiscovered.length}/${discovered.length}` : discovered.length} LISTENING
+              </span>
+            </div>
+            <div className="input-well search">
+              <span className="prompt" aria-hidden="true">
+                ?
+              </span>
+              <input
+                type="text"
+                placeholder="search name, port, framework"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                spellCheck={false}
+                aria-label="Search discovered services"
+              />
+              {query && (
+                <button className="icon-btn clear" onClick={() => setQuery("")} aria-label="Clear search" type="button">
+                  <X size={12} strokeWidth={3} />
+                </button>
+              )}
             </div>
             {discovered.length === 0 && <p className="dim">Nothing is listening on this machine right now.</p>}
-            {discovered.map((d) => (
+            {discovered.length > 0 && filteredDiscovered.length === 0 && (
+              <p className="dim">No matches for &quot;{query}&quot;.</p>
+            )}
+            {filteredDiscovered.map((d) => (
               <div key={d.id} className="card">
                 <div className="card-head">
                   <span className="card-name">{d.name || `PID ${d.pid}`}</span>
@@ -479,9 +543,6 @@ export function App() {
         </button>
         <button className={`nav-tab ${tab === "tunnels" ? "active" : ""}`} onClick={() => setTab("tunnels")}>
           Tunnels <span className="nav-count">{tunnels.length}</span>
-        </button>
-        <button className={`nav-tab ${tab === "settings" ? "active" : ""}`} onClick={() => setTab("settings")}>
-          Setup
         </button>
       </nav>
 

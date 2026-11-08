@@ -175,27 +175,43 @@ svg {
   flex-shrink: 0;
 }
 
-/* clip-art starburst sticker */
+/* settings button: beveled metal key with a clip-art gear */
 .burst {
-  position: relative;
-  width: 58px;
-  height: 58px;
-  margin: -10px -4px -10px 0;
+  width: 46px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transform: rotate(-12deg);
-  font-family: var(--font-wordart);
-  font-size: 14px;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--ink);
-  background: radial-gradient(circle at 40% 30%, #fff7a8 0%, var(--gold) 45%, #e89a00 100%);
-  clip-path: polygon(
-    50% 0%, 59.3% 15.2%, 75% 6.7%, 75.5% 24.5%, 93.3% 25%, 84.8% 40.7%, 100% 50%, 84.8% 59.3%,
-    93.3% 75%, 75.5% 75.5%, 75% 93.3%, 59.3% 84.8%, 50% 100%, 40.7% 84.8%, 25% 93.3%, 24.5% 75.5%,
-    6.7% 75%, 15.2% 59.3%, 0% 50%, 15.2% 40.7%, 6.7% 25%, 24.5% 24.5%, 25% 6.7%, 40.7% 15.2%
-  );
+  padding: 0;
+  cursor: pointer;
+  background: var(--gloss-metal);
+  border: 3px solid;
+  border-color: var(--raised);
+  outline: 1px solid var(--metal-lo);
+}
+
+.burst svg {
+  filter: drop-shadow(-1px 1px 0 rgba(0, 0, 0, 0.7));
+}
+
+.burst:hover {
+  filter: brightness(1.2);
+}
+
+.burst:hover svg {
+  transform: rotate(22deg);
+}
+
+.burst:active,
+.burst.pressed {
+  border-color: var(--inset);
+  background: linear-gradient(180deg, #1c1f20, #2e3234);
+  filter: none;
+}
+
+.burst:focus-visible {
+  outline: 2px dotted var(--gold);
+  outline-offset: -6px;
 }
 
 .screen {
@@ -959,4 +975,14 @@ code {
   background: var(--daemon);
   clip-path: circle(50%);
   padding-top: 0;
+}
+
+/* search field */
+.search {
+  flex-shrink: 0;
+}
+.icon-btn.clear {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
 }
