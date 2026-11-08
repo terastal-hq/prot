@@ -641,14 +641,33 @@ func cmdDiscover(args []string) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	var services []discovery.ProcessService
 
-	cfg := discovery.DefaultConfig()
-	services, err := discovery.Discover(ctx, cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Discovery error: %v\n", err)
-		os.Exit(1)
+	// If daemon is running, retrieve cached discovery from daemon (excluding internal ports)
+	if client, err := getDaemonClient(); err == nil {
+		resp, err := client.request(http.MethodGet, "/v1/discovery", nil)
+		if err == nil {
+			defer resp.Body.Close()
+			var data struct {
+				Services []discovery.ProcessService `json:"services"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+				services = data.Services
+			}
+		}
+	}
+
+	if services == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		cfg := discovery.DefaultConfig()
+		var err error
+		services, err = discovery.Discover(ctx, cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Discovery error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if jsonOutput {
