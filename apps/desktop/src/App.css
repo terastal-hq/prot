@@ -990,9 +990,8 @@ code {
 .found-list {
   list-style: none;
   background: var(--sunken);
-  border: 3px solid;
-  border-color: var(--inset);
-  margin: 0 2px;
+  border: none;
+  margin: 0;
 }
 
 .found-row {
