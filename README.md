@@ -11,9 +11,7 @@ It provides stable service identities and addresses (`http://<alias>.localhost`)
   <img src="docs/assets/prot-desktop-ui.png" alt="prot Desktop Dashboard" width="750" />
 </p>
 
----
-
-## ⚡ Quick Install
+## Quick Install
 
 Install the `prot` CLI, background daemon (`protd`), and systemd/launchd service with a single command:
 
@@ -23,9 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/insta
 
 For package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
 
----
-
-## 🏗 Architecture
+## Architecture
 
 ```
    Prot Desktop               prot CLI               AI Agents
@@ -51,9 +47,7 @@ Child Process Supervisor     SSH Tunnels                Local Event Log
 - **Prot Desktop**: Tauri 2 + React + TypeScript first-party dashboard.
 - **REST & MCP API**: Loopback management API with 256-bit token authentication and DNS-rebinding protection.
 
----
-
-## 🚀 Quick Tour
+## Quick Tour
 
 ### 1. Inspect System & Diagnostics
 ```bash
@@ -88,13 +82,19 @@ prot logs web -f
 prot status
 ```
 
----
-
-## 🤖 AI Agent Integration (MCP)
+## AI Agent Integration (MCP)
 
 Prot natively implements the **Model Context Protocol (MCP)**. AI agents (such as Claude Desktop, Cursor, or pi) can discover your local services, verify health, and ensure required endpoints are running.
 
-Add to your MCP configuration (e.g. `claude_desktop_config.json`):
+### Automatic Setup Prompt for AI Coding Agents
+
+Paste this prompt directly into your AI coding assistant (Claude Code, Cursor, pi, Cline, Windsurf, etc.) to configure prot automatically:
+
+> "Add prot as an MCP server in my agent configuration. Configure it with command `prot` and arguments `["mcp"]`. If writing to a config file like claude_desktop_config.json or mcp.json, register it under `mcpServers.prot`."
+
+### Manual Configuration
+
+Add to your MCP configuration file (e.g. `claude_desktop_config.json`):
 
 ```json
 {
@@ -107,7 +107,8 @@ Add to your MCP configuration (e.g. `claude_desktop_config.json`):
 }
 ```
 
-Available MCP tools:
+### Available MCP Tools
+
 - `list_services`: Discover available local services.
 - `get_service`: Read service state and launch configuration.
 - `get_service_url`: Obtain the canonical `.localhost` URL.
@@ -116,17 +117,13 @@ Available MCP tools:
 - `start_service`, `stop_service`, `restart_service`: Process controls.
 - `set_alias`: Manage dynamic proxy aliases.
 
----
-
-## 📚 Documentation
+## Documentation
 
 - **[Installation Guide](docs/installation.md)** — One-line installer, binary packages, background service management.
 - **[Platform Support Matrix](docs/support-matrix.md)** — Operating system tiers and hardware capabilities.
 - **[OpenAPI Specification](schemas/openapi.yaml)** — Complete REST API contract.
 
----
-
-## 🧪 Testing
+## Testing
 
 Run the Go unit test suite:
 ```bash
@@ -137,8 +134,6 @@ Run the end-to-end integration acceptance test:
 ```bash
 ./scripts/test_e2e.sh
 ```
-
----
 
 ## License
 
