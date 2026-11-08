@@ -3,6 +3,7 @@ import { Play, Square, RotateCw, Trash2, Terminal, ExternalLink, Plus, Copy, Che
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
+import gearsIcon from "./assets/settings-gears.png";
 import "./App.css";
 
 type Tab = "servers" | "found" | "tunnels" | "settings";
@@ -40,22 +41,7 @@ function tunnelKind(state: TunnelStatus["state"]): Kind {
 }
 
 function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
-      <defs>
-        <linearGradient id="gear-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff2a0" />
-          <stop offset="0.45" stopColor="#fb8808" />
-          <stop offset="0.55" stopColor="#d86800" />
-          <stop offset="1" stopColor="#f5a020" />
-        </linearGradient>
-      </defs>
-      <path d="M20.07 10.53 L23.12 10.68 L23.12 13.32 L20.07 13.47 L18.75 16.66 L20.80 18.93 L18.93 20.80 L16.66 18.75 L13.47 20.07 L13.32 23.12 L10.68 23.12 L10.53 20.07 L7.34 18.75 L5.07 20.80 L3.20 18.93 L5.25 16.66 L3.93 13.47 L0.88 13.32 L0.88 10.68 L3.93 10.53 L5.25 7.34 L3.20 5.07 L5.07 3.20 L7.34 5.25 L10.53 3.93 L10.68 0.88 L13.32 0.88 L13.47 3.93 L16.66 5.25 L18.93 3.20 L20.80 5.07 L18.75 7.34 Z" fill="url(#gear-fill)" stroke="#000" strokeWidth="1.4" strokeLinejoin="miter" />
-      <circle cx="12" cy="12" r="5.2" fill="none" stroke="#000" strokeWidth="1" opacity="0.55" />
-      <circle cx="12" cy="12" r="3.3" fill="#000" />
-      <circle cx="12" cy="12" r="1.5" fill="#5af451" />
-    </svg>
-  );
+  return <img src={gearsIcon} alt="" width={40} height={35} draggable={false} />;
 }
 
 function Status({ kind, text }: { kind: Kind; text?: string }) {

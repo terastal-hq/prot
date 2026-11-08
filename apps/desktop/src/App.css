@@ -177,8 +177,8 @@ svg {
 
 /* settings button: beveled metal key with a clip-art gear */
 .burst {
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -190,16 +190,15 @@ svg {
   outline: 1px solid var(--metal-lo);
 }
 
-.burst svg {
+.burst img {
+  display: block;
+  width: 40px;
+  height: auto;
   filter: drop-shadow(-1px 1px 0 rgba(0, 0, 0, 0.7));
 }
 
 .burst:hover {
   filter: brightness(1.2);
-}
-
-.burst:hover svg {
-  transform: rotate(22deg);
 }
 
 .burst:active,
