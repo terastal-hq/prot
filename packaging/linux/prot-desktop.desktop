@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=prot
+GenericName=Development Control Plane
+Comment=Your development servers, under control
+Exec=prot-desktop
+Icon=prot-desktop
+Terminal=false
+Categories=Development;
+StartupWMClass=prot-desktop

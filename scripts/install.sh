@@ -12,7 +12,7 @@ REPO="terastal-hq/prot"
 INSTALL_DIR="${HOME}/.local/bin"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 APPLICATIONS_DIR="${HOME}/.local/share/applications"
-ICONS_DIR="${HOME}/.local/share/icons/hicolor/128x128/apps"
+ICONS_BASE="${HOME}/.local/share/icons/hicolor"
 
 BOLD='\033[1m'
 CYAN='\033[0;36m'
@@ -124,21 +124,42 @@ if [ -f "apps/desktop/src-tauri/target/release/prot-desktop" ]; then
 fi
 
 if [ -f "$INSTALL_DIR/prot-desktop" ] && [ "$OS" = "linux" ]; then
-    mkdir -p "$APPLICATIONS_DIR" "$ICONS_DIR"
-    if [ -f "apps/desktop/src-tauri/icons/128x128.png" ]; then
-        cp -f "apps/desktop/src-tauri/icons/128x128.png" "$ICONS_DIR/prot.png"
+    mkdir -p "$APPLICATIONS_DIR"
+
+    # Icon: every size generated from design/icon.png (scripts/gen_icons.sh).
+    if [ -d "packaging/linux/icons" ]; then
+        for size_dir in packaging/linux/icons/*/; do
+            size="$(basename "$size_dir")"
+            mkdir -p "$ICONS_BASE/$size/apps"
+            cp -f "$size_dir/prot-desktop.png" "$ICONS_BASE/$size/apps/prot-desktop.png"
+        done
+    else
+        mkdir -p "$ICONS_BASE/512x512/apps"
+        curl -fsSL -o "$ICONS_BASE/512x512/apps/prot-desktop.png" \
+            "https://raw.githubusercontent.com/${REPO}/main/apps/desktop/src-tauri/icons/icon.png" || true
     fi
-    cat > "$APPLICATIONS_DIR/prot.desktop" << EOF
+
+    # Desktop entry. The file name and StartupWMClass match the window's app id
+    # ("prot-desktop") so taskbars and docks on Wayland and X11 show the right icon.
+    cat > "$APPLICATIONS_DIR/prot-desktop.desktop" << EOF
 [Desktop Entry]
+Type=Application
 Name=prot
+GenericName=Development Control Plane
 Comment=Your development servers, under control
 Exec=$INSTALL_DIR/prot-desktop
-Icon=prot
+Icon=prot-desktop
 Terminal=false
-Type=Application
 Categories=Development;
+StartupWMClass=prot-desktop
 EOF
-    echo -e "${GREEN}✓ Application menu shortcut registered${NC}"
+
+    # Remove the legacy entry and icon from earlier installs.
+    rm -f "$APPLICATIONS_DIR/prot.desktop" "$ICONS_BASE/128x128/apps/prot.png"
+
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f "$ICONS_BASE" >/dev/null 2>&1 || true
+    echo -e "${GREEN}✓ Application menu shortcut and icons registered${NC}"
 fi
 
 # 5. Background daemon setup (systemd for Linux, launchd for macOS)
