@@ -1,0 +1,76 @@
+version: 2
+
+project_name: prot
+
+builds:
+  - id: prot
+    main: ./cmd/prot
+    binary: prot
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/terastal-hq/prot/internal/daemon.Version={{ .Version }}
+
+  - id: protd
+    main: ./cmd/protd
+    binary: protd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/terastal-hq/prot/internal/daemon.Version={{ .Version }}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - docs/support-matrix.md
+      - scripts/install.sh
+
+nfpms:
+  - id: prot-packages
+    package_name: prot
+    vendor: Terastal HQ
+    homepage: https://github.com/terastal-hq/prot
+    maintainer: Aditya Gupta <mail@adityagupta.dev>
+    description: Your development servers, under control.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    contents:
+      - src: ./scripts/protd.service
+        dst: /usr/lib/systemd/user/protd.service
+        file_info:
+          mode: 0644
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

@@ -30,6 +30,8 @@ target/
 **/target/
 gen/
 **/gen/
+binaries/
+**/binaries/
 
 # OS / Editor
 .DS_Store

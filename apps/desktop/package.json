@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "prepare:sidecars": "bash ../../scripts/build_sidecars.sh",
+    "build": "npm run prepare:sidecars && tsc && vite build",
     "tauri": "tauri"
   },
   "dependencies": {
