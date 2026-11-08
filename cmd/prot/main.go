@@ -736,14 +736,20 @@ func cmdStatus(args []string) {
 	}
 	defer resp.Body.Close()
 
-	var health map[string]interface{}
+	var health struct {
+		Status      string `json:"status"`
+		Version     string `json:"version"`
+		PID         int    `json:"pid"`
+		GatewayAddr string `json:"gateway_addr"`
+		AdminAddr   string `json:"admin_addr"`
+	}
 	_ = json.NewDecoder(resp.Body).Decode(&health)
 
 	fmt.Printf("prot daemon (protd) is running:\n")
-	fmt.Printf("  • Version:      %v\n", health["version"])
-	fmt.Printf("  • PID:          %v\n", health["pid"])
-	fmt.Printf("  • Gateway URL:  http://%v\n", health["gateway_addr"])
-	fmt.Printf("  • Admin API:    http://%v\n", health["admin_addr"])
+	fmt.Printf("  • Version:      %s\n", health.Version)
+	fmt.Printf("  • PID:          %d\n", health.PID)
+	fmt.Printf("  • Gateway URL:  http://%s\n", health.GatewayAddr)
+	fmt.Printf("  • Admin API:    http://%s\n", health.AdminAddr)
 
 	routesResp, err := client.request(http.MethodGet, "/v1/routes", nil)
 	if err == nil {
