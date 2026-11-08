@@ -1,34 +1,10 @@
 /* prot design system — see /design. Hard edges, hard shadows (down-left), zero blur. */
 
 @font-face {
-  font-family: "Jacquard 24";
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/jacquard-24.woff2") format("woff2");
-}
-@font-face {
   font-family: "JetBrains Mono";
   font-weight: 400 700;
   font-display: swap;
   src: url("./assets/fonts/jetbrains-mono.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Silkscreen";
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/silkscreen-400.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Silkscreen";
-  font-weight: 700;
-  font-display: swap;
-  src: url("./assets/fonts/silkscreen-700.woff2") format("woff2");
-}
-@font-face {
-  font-family: "VT323";
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/vt323.woff2") format("woff2");
 }
 
 :root {
@@ -54,9 +30,9 @@
   --crash-tint: #1a1206;
 
   --font-ui: "JetBrains Mono", ui-monospace, monospace;
-  --font-label: "Silkscreen", monospace;
-  --font-term: "VT323", monospace;
-  --font-display: "Jacquard 24", serif;
+  --font-label: "JetBrains Mono", ui-monospace, monospace;
+  --font-term: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "JetBrains Mono", ui-monospace, monospace;
 
   --shadow: -6px 6px 0 var(--stone-shadow);
   --shadow-sm: -4px 4px 0 var(--stone-shadow);
@@ -147,10 +123,11 @@ svg {
   align-items: center;
   gap: 8px;
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--daemon);
+  font-weight: 700;
 }
 
 .daemon-chip.offline {
@@ -192,10 +169,11 @@ svg {
   border: none;
   border-left: 2px solid var(--stone-shadow);
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+  font-weight: 700;
 }
 
 .nav-tab:first-child {
@@ -229,23 +207,25 @@ svg {
 
 .screen-title h1 {
   font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 52px;
-  line-height: 0.85;
+  font-weight: 800;
+  font-size: 28px;
+  line-height: 1.1;
   color: var(--paper);
+  letter-spacing: -0.01em;
 }
 
 .label {
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ash);
+  font-weight: 700;
 }
 
 .term {
   font-family: var(--font-term);
-  font-size: 22px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -255,7 +235,7 @@ svg {
 
 code {
   font-family: var(--font-term);
-  font-size: 20px;
+  font-size: 13px;
   color: var(--phosphor);
 }
 
@@ -383,10 +363,11 @@ code {
   align-items: center;
   gap: 8px;
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
+  font-weight: 700;
 }
 
 .status .sq {
@@ -439,11 +420,12 @@ code {
 
 .summary-chip {
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   padding: 4px 10px;
   border: 2px solid var(--ash);
   color: var(--ash);
+  font-weight: 700;
 }
 .summary-chip.run {
   border-color: var(--daemon);
@@ -457,12 +439,13 @@ code {
 .tag {
   display: inline-block;
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 2px 6px;
   border: 2px solid var(--ash);
   color: var(--ash);
+  font-weight: 700;
 }
 .tag.http {
   background: var(--ink);
@@ -514,9 +497,10 @@ code {
 
 .port {
   font-family: var(--font-term);
-  font-size: 22px;
+  font-size: 15px;
   line-height: 1;
   color: var(--daemon);
+  font-weight: 700;
 }
 
 .card.crashed .port {
@@ -577,9 +561,10 @@ code {
 
 .field > label {
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-weight: 700;
 }
 
 .input-well {
@@ -594,9 +579,10 @@ code {
 
 .input-well .prompt {
   font-family: var(--font-term);
-  font-size: 26px;
+  font-size: 16px;
   line-height: 1;
   color: var(--hazard);
+  font-weight: 700;
 }
 
 .input-well:focus-within {
@@ -670,9 +656,9 @@ code {
 
 .sheet-head h2 {
   font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 36px;
-  line-height: 0.9;
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1.2;
 }
 
 .sheet-body {
@@ -714,9 +700,10 @@ code {
   border: 2px solid var(--ink);
   border-bottom: none;
   font-family: var(--font-term);
-  font-size: 20px;
+  font-size: 12px;
   line-height: 1.1;
   color: var(--ink);
+  font-weight: 700;
 }
 
 .terminal-screen {
@@ -728,8 +715,8 @@ code {
   border: 2px solid var(--ink);
   padding: 10px 12px;
   font-family: var(--font-term);
-  font-size: 20px;
-  line-height: 1.15;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--phosphor);
   text-shadow: 0 0 5px rgba(126, 173, 118, 0.5);
   user-select: text;
@@ -777,8 +764,8 @@ code {
   outline: 2px solid var(--paper);
   padding: 12px;
   font-family: var(--font-term);
-  font-size: 20px;
-  line-height: 1.15;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--phosphor);
   text-shadow: 0 0 5px rgba(126, 173, 118, 0.5);
   overflow-x: auto;
