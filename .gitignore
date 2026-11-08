@@ -1,0 +1,35 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage artifacts
+*.out
+*.test
+coverage.txt
+
+# Local daemon state and auth tokens
+.prot/
+*.token
+*.log
+daemon.json
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust & Tauri
+src-tauri/target/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
