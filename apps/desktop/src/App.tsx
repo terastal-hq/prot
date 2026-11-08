@@ -271,10 +271,15 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <img src={wordmark} alt="prot" />
-        <span className={`daemon-chip ${isOnline ? "" : "offline"}`}>
-          <span className="sq" aria-hidden="true" />
-          {isOnline ? "DAEMON ACTIVE" : "DAEMON OFFLINE"}
-        </span>
+        <div className="header-right">
+          <span className={`daemon-chip ${isOnline ? "" : "offline"}`}>
+            <span className="sq" aria-hidden="true" />
+            {isOnline ? "DAEMON ACTIVE" : "DAEMON OFFLINE"}
+          </span>
+          <span className="burst" aria-hidden="true">
+            {health ? `v${health.version}` : "prot"}
+          </span>
+        </div>
       </header>
 
       <main className="screen">
@@ -290,9 +295,17 @@ export function App() {
 
             {services.length > 0 && (
               <div className="summary">
-                <span className="summary-chip run">{running} RUNNING</span>
-                {crashed > 0 && <span className="summary-chip crash">{crashed} CRASHED</span>}
-                <span className="summary-chip">{idle} IDLE</span>
+                <span className="summary-chip run">
+                  <b>{running}</b> RUNNING
+                </span>
+                {crashed > 0 && (
+                  <span className="summary-chip crash">
+                    <b>{crashed}</b> CRASHED
+                  </span>
+                )}
+                <span className="summary-chip">
+                  <b>{idle}</b> IDLE
+                </span>
               </div>
             )}
 
@@ -476,6 +489,9 @@ export function App() {
         <div className={`toast ${toast.ok ? "ok" : ""}`} role="alert">
           <div className="bar" aria-hidden="true" />
           <div className="msg">
+            <span className={`warn-icon ${toast.ok ? "ok" : ""}`} aria-hidden="true">
+              {toast.ok ? "" : "!"}
+            </span>
             <span>{toast.text}</span>
             <button className="icon-btn" onClick={() => setToast(null)} aria-label="Dismiss">
               <X size={14} strokeWidth={2.5} />
