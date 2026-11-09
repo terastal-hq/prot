@@ -44,10 +44,11 @@ prot tunnel add db --host prod-db --remote-port 5432     # user, port, key and j
 ```
 
 In the desktop app the SSH host box in the New Tunnel sheet is both a text box and a dropdown of these names (type
-to filter, arrow keys and Enter to choose). Choosing one fills in the port and key ssh will use and shows
+to filter, arrow keys and Enter to choose). Choosing one fills in the SSH user, SSH port and identity file ssh will use and shows
 `deploy@db.internal.example.com:2222 via bastion` under the box. Those values are only passed on if you change them;
 otherwise the tunnel stores just the name and ssh keeps reading your configuration, so editing `~/.ssh/config`
-later changes the tunnel too. Typing any other host still works.
+later changes the tunnel too. Typing any other host still works, and so does `user@host` in the host box (a user
+typed into the SSH user box wins over it).
 
 How prot reads it:
 

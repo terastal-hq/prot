@@ -410,13 +410,14 @@ export function App() {
   const [tunLocalPort, setTunLocalPort] = useState("");
   const [tunIdentity, setTunIdentity] = useState("");
   const [tunSshPort, setTunSshPort] = useState("");
+  const [tunUser, setTunUser] = useState("");
   const [tunAuto, setTunAuto] = useState(true);
   const [tunPassword, setTunPassword] = useState("");
   // Machines from ~/.ssh/config, and what ssh resolves for the one typed in the host box.
   const [sshHosts, setSshHosts] = useState<string[]>([]);
   const [machine, setMachine] = useState<SSHMachine | null>(null);
   // Values copied from the machine into the form, so they are sent only when the user changes them.
-  const prefill = useRef({ port: "", identity: "" });
+  const prefill = useRef({ port: "", identity: "", user: "" });
 
   // Tunnel password sheet
   const [pwTunnel, setPwTunnel] = useState<TunnelStatus | null>(null);
@@ -647,6 +648,12 @@ export function App() {
   const hostName = tunHost.slice(tunHost.lastIndexOf("@") + 1).trim();
   useEffect(() => {
     if (!sshHosts.includes(hostName)) {
+      // Drop what was copied from the previous machine, but keep anything the user typed themselves.
+      const old = prefill.current;
+      setTunSshPort((cur) => (cur === old.port ? "" : cur));
+      setTunIdentity((cur) => (cur === old.identity ? "" : cur));
+      setTunUser((cur) => (cur === old.user ? "" : cur));
+      prefill.current = { port: "", identity: "", user: "" };
       setMachine(null);
       return;
     }
@@ -657,10 +664,12 @@ export function App() {
         setMachine(m);
         const port = m.port && m.port !== 22 ? String(m.port) : "";
         const identity = m.identity_files[0] ?? "";
+        const user = m.user;
         // Never overwrite what the user typed: only replace empty fields or earlier prefilled values.
         setTunSshPort((cur) => (cur === "" || cur === prefill.current.port ? port : cur));
         setTunIdentity((cur) => (cur === "" || cur === prefill.current.identity ? identity : cur));
-        prefill.current = { port, identity };
+        setTunUser((cur) => (cur === "" || cur === prefill.current.user ? user : cur));
+        prefill.current = { port, identity, user };
       },
       () => !stale && setMachine(null),
     );
@@ -677,18 +686,22 @@ export function App() {
     setTunLocalPort("");
     setTunIdentity("");
     setTunSshPort("");
+    setTunUser("");
     setTunAuto(true);
     setTunPassword("");
     setMachine(null);
-    prefill.current = { port: "", identity: "" };
+    prefill.current = { port: "", identity: "", user: "" };
   };
 
   const handleCreateTunnel = async (e: React.FormEvent) => {
     e.preventDefault();
-    // "user@host" is the familiar spelling; the API takes the user separately.
+    // "user@host" is the familiar spelling; the API takes the user separately. A user typed into the User box
+    // wins over one in the host box, and a value that was only copied from ~/.ssh/config is left to ssh.
     const at = tunHost.lastIndexOf("@");
-    const sshUser = at >= 0 ? tunHost.slice(0, at) : undefined;
+    const hostUser = at >= 0 ? tunHost.slice(0, at).trim() : "";
     const sshHost = at >= 0 ? tunHost.slice(at + 1) : tunHost;
+    const typedUser = tunUser.trim() !== prefill.current.user ? tunUser.trim() : "";
+    const sshUser = typedUser || hostUser || undefined;
     try {
       await client.createTunnel({
         alias: tunAlias.trim().toLowerCase(),
@@ -1240,13 +1253,14 @@ export function App() {
               </p>
             )}
             <div className="form-row">
-              <Field label="Remote port" required type="number" placeholder="5432" prompt=":" value={tunRemotePort} onChange={setTunRemotePort} />
-              <Field label="Remote host" placeholder="127.0.0.1" value={tunRemoteHost} onChange={setTunRemoteHost} />
-            </div>
-            <div className="form-row">
-              <Field label="Local port" type="number" placeholder="auto" prompt=":" value={tunLocalPort} onChange={setTunLocalPort} />
+              <Field label="SSH user" placeholder="your username" prompt="@" value={tunUser} onChange={setTunUser} />
               <Field label="SSH port" type="number" placeholder="22" prompt=":" value={tunSshPort} onChange={setTunSshPort} />
             </div>
+            <div className="form-row">
+              <Field label="Remote port" required type="number" placeholder="5432" prompt=":" value={tunRemotePort} onChange={setTunRemotePort} />
+              <Field label="Local port" type="number" placeholder="auto" prompt=":" value={tunLocalPort} onChange={setTunLocalPort} />
+            </div>
+            <Field label="Remote host" placeholder="127.0.0.1" value={tunRemoteHost} onChange={setTunRemoteHost} />
             <Field label="Identity file" placeholder="~/.ssh/id_ed25519" prompt="/" value={tunIdentity} onChange={setTunIdentity} />
             <Field
               label="Password or key passphrase (optional)"
