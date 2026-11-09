@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestParseTunnelAdd(t *testing.T) {
-	cfg, err := parseTunnelAdd([]string{
+	cfg, _, err := parseTunnelAdd([]string{
 		"db", "--host", "deploy@bastion.example", "--remote-port", "5432", "--remote-host", "10.0.0.5",
 		"--local-port", "15432", "--identity", "/home/me/.ssh/id_ed25519", "--ssh-port", "2222",
 		"--ssh-arg", "-o", "--ssh-arg", "Compression=yes", "--auto-connect",
@@ -32,7 +33,7 @@ func TestParseTunnelAdd(t *testing.T) {
 }
 
 func TestParseTunnelAddDefaultsAndUserFlag(t *testing.T) {
-	cfg, err := parseTunnelAdd([]string{"web", "--host", "bastion", "--user", "alice", "--remote-port", "80"})
+	cfg, _, err := parseTunnelAdd([]string{"web", "--host", "bastion", "--user", "alice", "--remote-port", "80"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,7 @@ func TestParseTunnelAddDefaultsAndUserFlag(t *testing.T) {
 	}
 
 	// an explicit --user wins over user@ in --host
-	cfg, _ = parseTunnelAdd([]string{"web", "--host", "bob@bastion", "--user", "alice", "--remote-port", "80"})
+	cfg, _, _ = parseTunnelAdd([]string{"web", "--host", "bob@bastion", "--user", "alice", "--remote-port", "80"})
 	if cfg.SSHUser != "alice" || cfg.SSHHost != "bastion" {
 		t.Errorf("--user should win: %+v", cfg)
 	}
@@ -62,7 +63,7 @@ func TestParseTunnelAddRejectsBadInput(t *testing.T) {
 		"non numeric port": {"db", "--host", "h", "--remote-port", "abc"},
 	}
 	for name, args := range cases {
-		if _, err := parseTunnelAdd(args); err == nil {
+		if _, _, err := parseTunnelAdd(args); err == nil {
 			t.Errorf("%s: expected an error for %v", name, args)
 		}
 	}
@@ -150,5 +151,68 @@ func TestTunnelPathEscapesAndTunnelStateBadge(t *testing.T) {
 	}
 	if got := truncateText(strings.Repeat("x", 100), 20); len(got) != 20 || !strings.HasSuffix(got, "...") {
 		t.Errorf("truncateText = %q", got)
+	}
+}
+
+func TestParseTunnelAddPasswordSources(t *testing.T) {
+	base := []string{"db", "--host", "h", "--remote-port", "1"}
+	cases := []struct {
+		extra []string
+		want  passwordSource
+		fail  bool
+	}{
+		{nil, passwordNone, false},
+		{[]string{"--password"}, passwordPrompt, false},
+		{[]string{"--password-stdin"}, passwordStdin, false},
+		{[]string{"--password", "--password-stdin"}, passwordNone, true},
+	}
+	for _, c := range cases {
+		_, source, err := parseTunnelAdd(append(append([]string{}, base...), c.extra...))
+		if (err != nil) != c.fail || (!c.fail && source != c.want) {
+			t.Errorf("%v: source %v, err %v", c.extra, source, err)
+		}
+	}
+}
+
+// The password must never be a flag: it would show up in ps output and shell history.
+func TestPasswordIsNotAFlagValue(t *testing.T) {
+	if _, _, err := parseTunnelAdd([]string{"db", "--host", "h", "--remote-port", "1", "--password=hunter2"}); err == nil {
+		t.Error("--password=<value> must be rejected; it is a switch, not a value")
+	}
+}
+
+func TestReadPasswordLine(t *testing.T) {
+	cases := map[string]struct {
+		in   string
+		want string
+		fail bool
+	}{
+		"plain":            {"s3cret\n", "s3cret", false},
+		"crlf":             {"s3cret\r\n", "s3cret", false},
+		"no final newline": {"s3cret", "s3cret", false},
+		"spaces kept":      {"  two words  \n", "  two words  ", false},
+		"only first line":  {"first\nsecond\n", "first", false},
+		"empty line":       {"\n", "", true},
+		"nothing":          {"", "", true},
+	}
+	for name, c := range cases {
+		got, err := readPasswordLine(strings.NewReader(c.in))
+		if (err != nil) != c.fail || got != c.want {
+			t.Errorf("%s: got %q, %v", name, got, err)
+		}
+	}
+}
+
+func TestNewTunnelRequestCarriesThePasswordOnlyWhenGiven(t *testing.T) {
+	with, _ := json.Marshal(newTunnelRequest{TunnelConfig: tunnels.TunnelConfig{Alias: "db"}, Password: "pw"})
+	without, _ := json.Marshal(newTunnelRequest{TunnelConfig: tunnels.TunnelConfig{Alias: "db"}})
+	if !strings.Contains(string(with), `"password":"pw"`) || !strings.Contains(string(with), `"alias":"db"`) {
+		t.Errorf("with password: %s", with)
+	}
+	if strings.Contains(string(without), "password") && !strings.Contains(string(without), "has_password") {
+		t.Errorf("an unset password must be omitted: %s", without)
+	}
+	if strings.Contains(string(without), `"password"`) {
+		t.Errorf("an unset password must be omitted: %s", without)
 	}
 }

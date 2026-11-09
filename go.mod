@@ -6,6 +6,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/net v0.62.0
+	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.62.0
 )
 
