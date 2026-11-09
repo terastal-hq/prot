@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/terastal-hq/prot/internal/askpass"
 	"github.com/terastal-hq/prot/internal/netutil"
 )
 
@@ -37,6 +39,9 @@ type TunnelConfig struct {
 	IdentityFile string   `json:"identity_file,omitempty"`
 	ExtraArgs    []string `json:"extra_args,omitempty"`
 	AutoConnect  bool     `json:"auto_connect"`
+	// HasPassword says a password (or key passphrase) for this tunnel is kept in the OS keyring. The secret itself
+	// is never part of the configuration or any API response.
+	HasPassword bool `json:"has_password"`
 }
 
 // TunnelStatus reports live runtime state for a supervised tunnel.
@@ -70,6 +75,8 @@ type Manager struct {
 	sshPath      string
 	readyTimeout time.Duration // how long to wait for the local forward to open
 	observer     func(TunnelStatus)
+	secret       func(tunnelID string) (string, error) // looks up a tunnel's stored password
+	askpassPath  string                                // program ssh runs to ask for it; defaults to this binary
 }
 
 // Timing for tunnel supervision.
@@ -100,6 +107,22 @@ func NewManagerWithSSH(sshPath string) *Manager {
 func (m *Manager) SetObserver(fn func(TunnelStatus)) {
 	m.mu.Lock()
 	m.observer = fn
+	m.mu.Unlock()
+}
+
+// SetSecretProvider registers how a tunnel's stored password is looked up. It is called on every connection
+// attempt, so a keyring that was locked at boot is picked up as soon as it opens.
+func (m *Manager) SetSecretProvider(fn func(tunnelID string) (string, error)) {
+	m.mu.Lock()
+	m.secret = fn
+	m.mu.Unlock()
+}
+
+// SetAskpassProgram sets the program ssh runs to ask for a password. The default is the running binary, which
+// acts as the helper when PROT_ASKPASS=1 (see package askpass).
+func (m *Manager) SetAskpassProgram(path string) {
+	m.mu.Lock()
+	m.askpassPath = path
 	m.mu.Unlock()
 }
 
@@ -362,33 +385,14 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		localPort = freePort
 	}
 
-	// Format: -N -L [127.0.0.1:]<localPort>:<remoteHost>:<remotePort>
-	forwardSpec := fmt.Sprintf("127.0.0.1:%d:%s:%d", localPort, st.cfg.RemoteHost, st.cfg.RemotePort)
-	target := st.cfg.SSHHost
-	if st.cfg.SSHUser != "" {
-		target = fmt.Sprintf("%s@%s", st.cfg.SSHUser, st.cfg.SSHHost)
+	env, err := m.sshEnv(st.cfg)
+	if err != nil {
+		return err
 	}
-
-	// The daemon has no terminal, so ssh must never wait for a password, passphrase or host-key answer: with
-	// BatchMode it fails at once and says why on stderr. These come before ExtraArgs on purpose: for -o options
-	// ssh keeps the first value it sees, so a tunnel cannot turn prompting back on.
-	args := []string{
-		"-N", // Do not execute remote command
-		"-L", forwardSpec,
-		"-o", "BatchMode=yes",
-		"-o", "ConnectTimeout=10",
-		"-o", "ExitOnForwardFailure=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=3",
-	}
-
-	if st.cfg.IdentityFile != "" {
-		args = append(args, "-i", st.cfg.IdentityFile)
-	}
-	args = append(args, st.cfg.ExtraArgs...)
-	args = append(args, target)
+	args := sshArgs(st.cfg, localPort)
 
 	cmd := exec.CommandContext(ctx, m.sshPath, args...)
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stderr := &tailBuffer{}
 	cmd.Stderr = stderr // ssh says why it failed here; keep the tail for the status instead of discarding it
@@ -440,11 +444,72 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		m.emit(st)
 	}
 
-	err := <-exited
+	err = <-exited
 	if err != nil && ctx.Err() == nil {
 		return withOutput(fmt.Errorf("ssh session ended: %w", err), stderr)
 	}
 	return nil
+}
+
+// sshArgs builds the ssh command line for a tunnel.
+func sshArgs(cfg TunnelConfig, localPort uint32) []string {
+	// Format: -N -L [127.0.0.1:]<localPort>:<remoteHost>:<remotePort>
+	forwardSpec := fmt.Sprintf("127.0.0.1:%d:%s:%d", localPort, cfg.RemoteHost, cfg.RemotePort)
+	target := cfg.SSHHost
+	if cfg.SSHUser != "" {
+		target = fmt.Sprintf("%s@%s", cfg.SSHUser, cfg.SSHHost)
+	}
+
+	// The daemon has no terminal, so ssh must never wait for an answer it cannot get. These options come before
+	// cfg.ExtraArgs on purpose: for -o options ssh keeps the first value it sees, so a tunnel cannot undo them.
+	args := []string{"-N", "-L", forwardSpec}
+	if cfg.HasPassword {
+		// BatchMode would forbid every prompt, including the one the askpass helper answers. Instead ssh asks the
+		// helper (SSH_ASKPASS_REQUIRE=force, see sshEnv), which answers only password prompts, and a wrong
+		// password costs one attempt rather than three.
+		args = append(args, "-o", "NumberOfPasswordPrompts=1")
+	} else {
+		args = append(args, "-o", "BatchMode=yes")
+	}
+	args = append(args,
+		"-o", "ConnectTimeout=10",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=3",
+	)
+
+	if cfg.IdentityFile != "" {
+		args = append(args, "-i", cfg.IdentityFile)
+	}
+	args = append(args, cfg.ExtraArgs...)
+	return append(args, target)
+}
+
+// sshEnv returns the environment for ssh: nil (inherit) normally, or the parent's plus the askpass settings and
+// the tunnel's secret when it has one. The secret travels in ssh's environment, readable only by this user,
+// rather than on a command line.
+func (m *Manager) sshEnv(cfg TunnelConfig) ([]string, error) {
+	if !cfg.HasPassword {
+		return nil, nil
+	}
+
+	m.mu.RLock()
+	lookup, program := m.secret, m.askpassPath
+	m.mu.RUnlock()
+
+	if lookup == nil {
+		return nil, errors.New("this tunnel needs a stored password but no keyring is configured")
+	}
+	secret, err := lookup(cfg.ID)
+	if err != nil {
+		return nil, fmt.Errorf("reading the stored password: %w", err)
+	}
+	if program == "" {
+		if program, err = os.Executable(); err != nil {
+			return nil, fmt.Errorf("locating the askpass helper: %w", err)
+		}
+	}
+	return append(os.Environ(), askpass.Env(program, secret)...), nil
 }
 
 // tailBuffer is an io.Writer that keeps only the end of what is written to it (ssh's stderr).
