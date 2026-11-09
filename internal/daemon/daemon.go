@@ -31,8 +31,9 @@ const Version = "0.1.0"
 // Config contains runtime configuration for protd.
 type Config struct {
 	DataDir     string `json:"data_dir"`
-	GatewayAddr string `json:"gateway_addr"` // Proxy listener e.g. 127.0.0.1:8080
-	AdminAddr   string `json:"admin_addr"`   // Loopback API listener e.g. 127.0.0.1:4400
+	GatewayAddr string `json:"gateway_addr"`       // Proxy listener e.g. 127.0.0.1:8080
+	AdminAddr   string `json:"admin_addr"`         // Loopback API listener e.g. 127.0.0.1:4400
+	SSHPath     string `json:"ssh_path,omitempty"` // ssh binary for tunnels; empty searches PATH
 }
 
 // DefaultConfig returns standard paths and loopback listeners.
@@ -93,8 +94,15 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, fmt.Errorf("initializing security: %w", err)
 	}
 
-	// 3. Initialize OpenSSH Tunnel Manager
-	tunMgr, _ := tunnels.NewManager()
+	// 3. Initialize OpenSSH Tunnel Manager. Without ssh the daemon still runs; tunnel calls say why they cannot.
+	var tunMgr *tunnels.Manager
+	if cfg.SSHPath != "" {
+		tunMgr = tunnels.NewManagerWithSSH(cfg.SSHPath)
+	} else if mgr, err := tunnels.NewManager(); err != nil {
+		log.Printf("protd: SSH tunnels disabled: %v", err)
+	} else {
+		tunMgr = mgr
+	}
 
 	// 4. Initialize Dynamic Reverse Proxy Router & Server
 	router := proxy.NewRouter()
@@ -221,6 +229,9 @@ func (d *Daemon) recoverState(ctx context.Context) error {
 			}
 		}
 	}
+
+	// Saved SSH tunnels: routes first, then reconnect the ones marked auto_connect.
+	d.reg.RestoreTunnels(ctx)
 	return nil
 }
 
@@ -235,9 +246,10 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		<-d.discTickerDone
 	}
 
-	// Gracefully stop all running supervised child processes
+	// Gracefully stop all running supervised child processes, and every ssh tunnel so none outlives the daemon
 	if d.reg != nil {
 		d.reg.StopAll(2 * time.Second)
+		d.reg.StopAllTunnels()
 	}
 
 	if d.adminSrv != nil {
