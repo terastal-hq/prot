@@ -13,17 +13,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/terastal-hq/prot/internal/daemon"
 	"github.com/terastal-hq/prot/internal/discovery"
 	"github.com/terastal-hq/prot/internal/mcp"
-	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/updater"
@@ -600,38 +601,30 @@ func cmdAdopt(args []string) {
 	}
 }
 
+// cmdMCP runs the MCP stdio adapter. It is a thin bridge to the running daemon: all tool calls execute inside
+// protd, so agents share services, logs and process control with the CLI and the desktop app.
 func cmdMCP(args []string) {
-	// If daemon is running, start MCP server hooked to local registry
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed getting home: %v\n", err)
-		os.Exit(1)
-	}
-
-	dataDir := os.Getenv("PROT_DATA_DIR")
-	if dataDir == "" {
-		dataDir = filepath.Join(home, ".prot")
-	}
-
-	dbPath := filepath.Join(dataDir, "prot.db")
-	db, err := storage.Open(dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to open prot database: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	router := proxy.NewRouter()
-	reg := registry.New(registry.Config{
-		DB:          db,
-		Router:      router,
-		GatewayHost: "8080",
+	bridge := mcp.NewBridge(func() (mcp.Endpoint, error) {
+		client, err := getDaemonClient()
+		if err != nil {
+			return mcp.Endpoint{}, err
+		}
+		return mcp.Endpoint{URL: fmt.Sprintf("http://%s/mcp", client.adminAddr), Token: client.token}, nil
 	})
 
-	srv := mcp.NewServer(reg)
-	ctx := context.Background()
-	if err := srv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF {
-		fmt.Fprintf(os.Stderr, "MCP server exited: %v\n", err)
+	// Fail early and visibly (stderr only, stdout is the protocol channel) if the daemon is not up. The bridge
+	// keeps retrying per message, so an agent that started first still works once protd comes up.
+	if _, err := getDaemonClient(); err != nil {
+		fmt.Fprintf(os.Stderr, "prot mcp: %v\n", err)
+		fmt.Fprintln(os.Stderr, "prot mcp: waiting for the daemon; start it with 'systemctl --user start protd'")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := bridge.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "MCP bridge exited: %v\n", err)
+		os.Exit(1)
 	}
 }
 
