@@ -39,3 +39,9 @@ WordArt headings, LED status lights and clip-art starbursts. Source of truth is
 - **Status:** LED plus mono label in a sunken pill. Starting and crashed LEDs blink.
 - **Bottom nav:** Doom-style status bar with a gold counter above each label.
 - **Dialogs:** full-screen sheets with a title bar. Errors appear in a message box with a warning triangle.
+
+## The website
+
+`site/` is the same system with the app's restraint taken off: parts are crooked, overlap and bleed off the page, hazard
+tape divides the sections, and things move. It still uses the app's tokens, fonts, bevels and recipes, and it
+only shows real things: cuts of the actual UI, and what the CLI actually printed. See `site/README.md`.
