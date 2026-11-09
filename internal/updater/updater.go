@@ -267,46 +267,80 @@ func ApplyUpdate(protBytes, protdBytes []byte, targetDir string) error {
 	protDest := filepath.Join(targetDir, "prot")
 	protdDest := filepath.Join(targetDir, "protd")
 
-	if err := writeAtomic(protDest, protBytes); err != nil {
+	// Stage both binaries completely before replacing either, so a full disk or a permission error cannot leave
+	// a new prot next to an old protd.
+	protStaged, err := stageFile(protDest, protBytes)
+	if err != nil {
+		return fmt.Errorf("staging prot binary at %q: %w", protDest, err)
+	}
+	defer protStaged.discard()
+
+	protdStaged, err := stageFile(protdDest, protdBytes)
+	if err != nil {
+		return fmt.Errorf("staging protd binary at %q: %w", protdDest, err)
+	}
+	defer protdStaged.discard()
+
+	if err := protStaged.commit(); err != nil {
 		return fmt.Errorf("updating prot binary at %q: %w", protDest, err)
 	}
-
-	if err := writeAtomic(protdDest, protdBytes); err != nil {
-		return fmt.Errorf("updating protd binary at %q: %w", protdDest, err)
+	if err := protdStaged.commit(); err != nil {
+		return fmt.Errorf("prot was updated but protd could not be replaced at %q: %w", protdDest, err)
 	}
-
 	return nil
 }
 
-func writeAtomic(destPath string, data []byte) error {
+// stagedFile is an executable written next to its destination, waiting to be renamed into place.
+type stagedFile struct {
+	tmpPath  string
+	destPath string
+}
+
+func stageFile(destPath string, data []byte) (*stagedFile, error) {
 	dir := filepath.Dir(destPath)
 	tmpFile, err := os.CreateTemp(dir, "prot-update-*")
 	if err != nil {
-		return fmt.Errorf("creating temp file in %q: %w", dir, err)
+		return nil, fmt.Errorf("creating temp file in %q: %w", dir, err)
 	}
-	tmpName := tmpFile.Name()
-	defer func() {
-		_ = os.Remove(tmpName)
-	}()
+	staged := &stagedFile{tmpPath: tmpFile.Name(), destPath: destPath}
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("writing update data: %w", err)
+		staged.discard()
+		return nil, fmt.Errorf("writing update data: %w", err)
 	}
-	if err := tmpFile.Chmod(0755); err != nil {
+	if err := tmpFile.Chmod(0o755); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("setting permissions: %w", err)
+		staged.discard()
+		return nil, fmt.Errorf("setting permissions: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
-		return err
+		staged.discard()
+		return nil, err
 	}
+	return staged, nil
+}
 
-	// Rename atomically replaces destPath even if currently running
-	if err := os.Rename(tmpName, destPath); err != nil {
+// commit atomically replaces the destination, which works even while the old binary is running.
+func (f *stagedFile) commit() error {
+	if err := os.Rename(f.tmpPath, f.destPath); err != nil {
 		return fmt.Errorf("replacing binary via rename: %w", err)
 	}
-
 	return nil
+}
+
+// discard removes the temp file if it was not committed. It is safe to call after commit.
+func (f *stagedFile) discard() {
+	_ = os.Remove(f.tmpPath)
+}
+
+func writeAtomic(destPath string, data []byte) error {
+	staged, err := stageFile(destPath, data)
+	if err != nil {
+		return err
+	}
+	defer staged.discard()
+	return staged.commit()
 }
 
 // RestartDaemon restarts the background protd service.

@@ -280,3 +280,42 @@ func TestHTTPGetLimitedEnforcesLimit(t *testing.T) {
 		t.Error("404 must be an error")
 	}
 }
+
+func TestApplyUpdateLeavesNothingBehindAndReplacesBoth(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "prot"), []byte("old prot"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "protd"), []byte("old protd"), 0o755)
+
+	if err := ApplyUpdate([]byte("new prot"), []byte("new protd"), dir); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	for name, want := range map[string]string{"prot": "new prot", "protd": "new protd"} {
+		if got, _ := os.ReadFile(filepath.Join(dir, name)); string(got) != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 2 {
+		t.Errorf("temp files left behind: %v", entries)
+	}
+}
+
+// An unwritable install directory must fail cleanly and leave the existing binary untouched.
+func TestApplyUpdateFailsCleanlyWhenDirectoryIsReadOnly(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "prot"), []byte("old prot"), 0o755)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Skip("cannot make directory read-only")
+	}
+	defer os.Chmod(dir, 0o755)
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+
+	if err := ApplyUpdate([]byte("new prot"), []byte("new protd"), dir); err == nil {
+		t.Fatal("expected an error when the install directory is not writable")
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "prot")); string(got) != "old prot" {
+		t.Errorf("prot was modified despite the failed update: %q", got)
+	}
+}
