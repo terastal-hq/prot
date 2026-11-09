@@ -215,7 +215,7 @@ func TestMCPServiceToolsShareArgumentName(t *testing.T) {
 	for _, tool := range srv.listTools() {
 		schema, _ := json.Marshal(tool.InputSchema)
 		switch tool.Name {
-		case "list_services":
+		case "list_services", "list_tunnels":
 			continue
 		}
 		if !strings.Contains(string(schema), `"id_or_alias"`) || strings.Contains(string(schema), `"id":`) {

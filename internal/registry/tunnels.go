@@ -197,6 +197,39 @@ func (r *Registry) StartTunnel(ctx context.Context, idOrAlias string) (*TunnelVi
 	return &view, nil
 }
 
+// WaitForTunnel waits until a tunnel is connected, or has failed an attempt (so the reason is known), or the
+// timeout passes, and returns the last status seen.
+func (r *Registry) WaitForTunnel(ctx context.Context, idOrAlias string, timeout time.Duration) (*TunnelView, error) {
+	id, err := r.resolveTunnelID(idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		st, ok := r.tunnels.GetStatus(id)
+		if !ok {
+			return nil, fmt.Errorf("%w: %q", tunnels.ErrNotFound, id)
+		}
+		view := r.tunnelView(*st)
+		if st.State == tunnels.StateConnected || (st.State == tunnels.StateReconnecting && st.LastError != "") {
+			return &view, nil
+		}
+
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			return &view, nil
+		case <-ctx.Done():
+			return &view, ctx.Err()
+		}
+	}
+}
+
 // StopTunnel disconnects a tunnel and waits for its ssh process to exit.
 func (r *Registry) StopTunnel(idOrAlias string) (*TunnelView, error) {
 	id, err := r.resolveTunnelID(idOrAlias)

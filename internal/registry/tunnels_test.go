@@ -339,3 +339,64 @@ func TestTunnelEventsAreBroadcast(t *testing.T) {
 		}
 	}
 }
+
+func TestWaitForTunnelConnectedAndTimeout(t *testing.T) {
+	env := newTunnelEnv(t, nil)
+	ctx := context.Background()
+	view, err := env.reg.RegisterTunnel(ctx, tunnelCfg(t, "wait", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// not started: nothing to wait for, so it returns at the timeout with the disconnected status
+	got, err := env.reg.WaitForTunnel(ctx, "wait", 150*time.Millisecond)
+	if err != nil || got.State != tunnels.StateDisconnected {
+		t.Errorf("idle tunnel: %+v, %v", got, err)
+	}
+
+	if _, err := env.reg.StartTunnel(ctx, view.Config.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err = env.reg.WaitForTunnel(ctx, "wait", 5*time.Second)
+	if err != nil || got.State != tunnels.StateConnected {
+		t.Errorf("start then wait: %+v, %v", got, err)
+	}
+
+	if _, err := env.reg.WaitForTunnel(ctx, "ghost", time.Second); !errors.Is(err, tunnels.ErrNotFound) {
+		t.Errorf("unknown tunnel: %v", err)
+	}
+}
+
+// A refused connection should come back with ssh's reason instead of waiting out the whole timeout.
+func TestWaitForTunnelReturnsEarlyWithTheFailureReason(t *testing.T) {
+	ssh := filepath.Join(t.TempDir(), "ssh")
+	script := "#!/bin/sh\necho 'user@host: Permission denied (publickey).' >&2\nexit 255\n"
+	if err := os.WriteFile(ssh, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := storage.Open(filepath.Join(t.TempDir(), "prot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	reg := New(Config{DB: db, Router: proxy.NewRouter(), Tunnels: tunnels.NewManagerWithSSH(ssh), GatewayHost: "8080"})
+	defer reg.StopAllTunnels()
+
+	ctx := context.Background()
+	cfg := tunnels.TunnelConfig{Alias: "denied", SSHHost: "h", RemotePort: 1, AutoConnect: true}
+	if _, err := reg.RegisterTunnel(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	got, err := reg.WaitForTunnel(ctx, "denied", 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.LastError, "Permission denied (publickey)") {
+		t.Errorf("LastError = %q", got.LastError)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("waited %v even though the failure was immediate", time.Since(start))
+	}
+}

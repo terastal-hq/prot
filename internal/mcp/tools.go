@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/terastal-hq/prot/internal/storage"
+	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
 // toolSpec pairs a tool's advertised definition with its implementation, so the schema an agent reads and the
@@ -33,7 +35,7 @@ func objectSchema(required []string, properties map[string]any) map[string]any {
 	return schema
 }
 
-// serviceTool is a tool that takes only a target service.
+// serviceTool is a tool that takes only a target service (or tunnel) by id or alias.
 func serviceTool(
 	name, description string,
 	run func(ctx context.Context, id string) (string, error),
@@ -97,6 +99,40 @@ func (s *Server) toolSpecs() []toolSpec {
 			},
 		),
 		s.logsTool(),
+		s.listTunnelsTool(),
+		serviceTool(
+			"start_tunnel",
+			"Connect a saved SSH tunnel by id or alias and wait until it is reachable (or report why it is not).",
+			func(ctx context.Context, id string) (string, error) {
+				if _, err := s.reg.StartTunnel(ctx, id); err != nil {
+					return "", err
+				}
+				view, err := s.reg.WaitForTunnel(ctx, id, tunnelConnectWait)
+				if err != nil {
+					return "", err
+				}
+				switch {
+				case view.State == tunnels.StateConnected:
+					return fmt.Sprintf(
+						"Tunnel %s is connected: %s (local port %d)",
+						view.Config.Alias, view.CanonicalURL, view.AssignedLocalPort,
+					), nil
+				case view.LastError != "":
+					return "", fmt.Errorf("tunnel %s could not connect: %s", view.Config.Alias, view.LastError)
+				default:
+					return fmt.Sprintf("Tunnel %s is still connecting; check list_tunnels", view.Config.Alias), nil
+				}
+			},
+		),
+		serviceTool("stop_tunnel", "Disconnect an SSH tunnel by id or alias.",
+			func(_ context.Context, id string) (string, error) {
+				view, err := s.reg.StopTunnel(id)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Stopped tunnel %s", view.Config.Alias), nil
+			},
+		),
 		serviceTool(
 			"ensure_running",
 			"Idempotently ensure a service is running. If stopped, it will be started.",
@@ -146,6 +182,23 @@ func (s *Server) toolSpecs() []toolSpec {
 			},
 		),
 		s.aliasTool(),
+	}
+}
+
+// tunnelConnectWait bounds how long start_tunnel waits for a connection before answering.
+const tunnelConnectWait = 15 * time.Second
+
+func (s *Server) listTunnelsTool() toolSpec {
+	return toolSpec{
+		tool: Tool{
+			Name: "list_tunnels",
+			Description: "List saved SSH tunnels with their state, the .localhost address each is reachable at, " +
+				"and the last error when one cannot connect.",
+			InputSchema: objectSchema(nil, nil),
+		},
+		run: func(_ context.Context, _ map[string]any) (string, error) {
+			return prettyJSON(s.reg.ListTunnels())
+		},
 	}
 }
 
