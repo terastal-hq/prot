@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -67,15 +67,6 @@ type Tunnel struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Workspace represents a project workspace grouping services.
-type Workspace struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	ServiceIDs  []string  `json:"service_ids"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
 // EventLog represents an auditable local daemon event.
 type EventLog struct {
 	ID        int64     `json:"id"`
@@ -85,11 +76,18 @@ type EventLog struct {
 	Payload   string    `json:"payload,omitempty"`
 }
 
-// DB wraps SQLite operations.
+// DB wraps SQLite operations. database/sql already serialises access (the pool holds a single connection), so
+// methods need no extra locking.
 type DB struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db          *sql.DB
+	eventWrites atomic.Int64
 }
+
+// Event log retention: the table is trimmed every pruneEveryWrites inserts to the newest maxEventLogRows rows.
+const (
+	maxEventLogRows  = 10000
+	pruneEveryWrites = 200
+)
 
 // Open initializes SQLite database at dbPath with WAL mode and schema.
 func Open(dbPath string) (*DB, error) {
@@ -125,13 +123,14 @@ func Open(dbPath string) (*DB, error) {
 
 // Close closes the database.
 func (s *DB) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	return s.db.Close()
 }
 
-func (s *DB) migrate() error {
-	schema := `
+// migrations are applied in order; the number applied is stored in PRAGMA user_version. Never edit an entry that
+// has shipped: append a new one instead.
+var migrations = []string{
+	// 1: initial schema
+	`
 	CREATE TABLE IF NOT EXISTS services (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
@@ -166,21 +165,6 @@ func (s *DB) migrate() error {
 		created_at TEXT NOT NULL
 	);
 
-	CREATE TABLE IF NOT EXISTS workspaces (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		description TEXT NOT NULL,
-		created_at TEXT NOT NULL
-	);
-
-	CREATE TABLE IF NOT EXISTS workspace_services (
-		workspace_id TEXT NOT NULL,
-		service_id TEXT NOT NULL,
-		PRIMARY KEY (workspace_id, service_id),
-		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
-	);
-
 	CREATE TABLE IF NOT EXISTS event_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp TEXT NOT NULL,
@@ -189,28 +173,133 @@ func (s *DB) migrate() error {
 		payload TEXT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_event_logs_timestamp ON event_logs(timestamp);
+	`,
+	// 2: drop the never-used workspace tables created by early builds
 	`
-	_, err := s.db.Exec(schema)
-	return err
+	DROP TABLE IF EXISTS workspace_services;
+	DROP TABLE IF EXISTS workspaces;
+	`,
+}
+
+func (s *DB) migrate() error {
+	var version int
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return fmt.Errorf("reading schema version: %w", err)
+	}
+	if version > len(migrations) {
+		return fmt.Errorf("database schema version %d is newer than this prot (supports %d); upgrade prot",
+			version, len(migrations))
+	}
+
+	for i := version; i < len(migrations); i++ {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(migrations[i]); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("recording migration %d: %w", i+1, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing migration %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func formatTime(t time.Time) string {
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func parseTime(value, what string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing %s %q: %w", what, value, err)
+	}
+	return t, nil
+}
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+const serviceColumns = `id, name, runtime, status, alias, command, args_json, cwd, env_json,
+	port, auto_port, auto_start, restart_policy, lan_exposed, created_at, updated_at`
+
+func scanService(row rowScanner) (Service, error) {
+	var svc Service
+	var argsJSON, envJSON, createdAt, updatedAt string
+	var autoPort, autoStart, lanExposed int
+
+	err := row.Scan(
+		&svc.ID, &svc.Name, &svc.Runtime, &svc.Status, &svc.Alias, &svc.Command,
+		&argsJSON, &svc.Cwd, &envJSON, &svc.Port,
+		&autoPort, &autoStart, &svc.RestartPolicy, &lanExposed,
+		&createdAt, &updatedAt,
+	)
+	if err != nil {
+		return Service{}, err
+	}
+
+	svc.Args = []string{}
+	if err := json.Unmarshal([]byte(argsJSON), &svc.Args); err != nil {
+		return Service{}, fmt.Errorf("decoding args of service %q: %w", svc.ID, err)
+	}
+	if svc.Args == nil { // the stored value was JSON null
+		svc.Args = []string{}
+	}
+	svc.Env = map[string]string{}
+	if err := json.Unmarshal([]byte(envJSON), &svc.Env); err != nil {
+		return Service{}, fmt.Errorf("decoding env of service %q: %w", svc.ID, err)
+	}
+	if svc.Env == nil {
+		svc.Env = map[string]string{}
+	}
+
+	svc.AutoPort = autoPort == 1
+	svc.AutoStart = autoStart == 1
+	svc.LANExposed = lanExposed == 1
+	if svc.CreatedAt, err = parseTime(createdAt, "created_at"); err != nil {
+		return Service{}, err
+	}
+	if svc.UpdatedAt, err = parseTime(updatedAt, "updated_at"); err != nil {
+		return Service{}, err
+	}
+	return svc, nil
 }
 
 // SaveService inserts or updates a Service.
 func (s *DB) SaveService(ctx context.Context, svc Service) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	argsBytes, _ := json.Marshal(svc.Args)
-	envBytes, _ := json.Marshal(svc.Env)
-	if svc.CreatedAt.IsZero() {
-		svc.CreatedAt = time.Now().UTC()
+	argsJSON, err := json.Marshal(svc.Args)
+	if err != nil {
+		return fmt.Errorf("encoding args: %w", err)
 	}
-	svc.UpdatedAt = time.Now().UTC()
+	envJSON, err := json.Marshal(svc.Env)
+	if err != nil {
+		return fmt.Errorf("encoding env: %w", err)
+	}
 
-	query := `
-	INSERT INTO services (
-		id, name, runtime, status, alias, command, args_json, cwd, env_json,
-		port, auto_port, auto_start, restart_policy, lan_exposed, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	now := time.Now().UTC()
+	if svc.CreatedAt.IsZero() {
+		svc.CreatedAt = now
+	}
+	svc.UpdatedAt = now
+
+	_, err = s.db.ExecContext(ctx, `
+	INSERT INTO services (`+serviceColumns+`)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		name=excluded.name,
 		runtime=excluded.runtime,
@@ -225,102 +314,43 @@ func (s *DB) SaveService(ctx context.Context, svc Service) error {
 		auto_start=excluded.auto_start,
 		restart_policy=excluded.restart_policy,
 		lan_exposed=excluded.lan_exposed,
-		updated_at=excluded.updated_at;
-	`
-
-	autoPortInt := 0
-	if svc.AutoPort {
-		autoPortInt = 1
-	}
-	autoStartInt := 0
-	if svc.AutoStart {
-		autoStartInt = 1
-	}
-	lanExposedInt := 0
-	if svc.LANExposed {
-		lanExposedInt = 1
-	}
-
-	_, err := s.db.ExecContext(
-		ctx,
-		query,
-		svc.ID,
-		svc.Name,
-		svc.Runtime,
-		svc.Status,
-		svc.Alias,
-		svc.Command,
-		string(argsBytes),
-		svc.Cwd,
-		string(envBytes),
-		svc.Port,
-		autoPortInt,
-		autoStartInt,
-		svc.RestartPolicy,
-		lanExposedInt,
-		svc.CreatedAt.Format(time.RFC3339Nano),
-		svc.UpdatedAt.Format(time.RFC3339Nano),
+		updated_at=excluded.updated_at`,
+		svc.ID, svc.Name, svc.Runtime, svc.Status, svc.Alias, svc.Command, string(argsJSON), svc.Cwd,
+		string(envJSON), svc.Port, boolToInt(svc.AutoPort), boolToInt(svc.AutoStart), svc.RestartPolicy,
+		boolToInt(svc.LANExposed), formatTime(svc.CreatedAt), formatTime(svc.UpdatedAt),
 	)
 	return err
 }
 
 // GetService fetches a service by ID.
 func (s *DB) GetService(ctx context.Context, id string) (*Service, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	return s.queryService(ctx, "WHERE id = ?", id)
+}
 
-	query := `
-	SELECT id, name, runtime, status, alias, command, args_json, cwd, env_json,
-	       port, auto_port, auto_start, restart_policy, lan_exposed, created_at, updated_at
-	FROM services WHERE id = ?
-	`
-	row := s.db.QueryRowContext(ctx, query, id)
+// ResolveService fetches a service by ID or alias in one query. An exact ID match wins over an alias match.
+func (s *DB) ResolveService(ctx context.Context, idOrAlias string) (*Service, error) {
+	if idOrAlias == "" {
+		return nil, ErrNotFound // services without an alias store "", which must never match
+	}
+	return s.queryService(ctx,
+		"WHERE id = ?1 OR alias = ?1 ORDER BY (id = ?1) DESC LIMIT 1", idOrAlias)
+}
 
-	var svc Service
-	var argsJSON, envJSON, createdAtStr, updatedAtStr string
-	var autoPortInt, autoStartInt, lanExposedInt int
-
-	err := row.Scan(
-		&svc.ID, &svc.Name, &svc.Runtime, &svc.Status, &svc.Alias, &svc.Command,
-		&argsJSON, &svc.Cwd, &envJSON, &svc.Port,
-		&autoPortInt, &autoStartInt, &svc.RestartPolicy, &lanExposedInt,
-		&createdAtStr, &updatedAtStr,
-	)
+func (s *DB) queryService(ctx context.Context, where string, args ...any) (*Service, error) {
+	row := s.db.QueryRowContext(ctx, "SELECT "+serviceColumns+" FROM services "+where, args...)
+	svc, err := scanService(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
-
-	_ = json.Unmarshal([]byte(argsJSON), &svc.Args)
-	if svc.Args == nil {
-		svc.Args = []string{}
-	}
-	_ = json.Unmarshal([]byte(envJSON), &svc.Env)
-	if svc.Env == nil {
-		svc.Env = map[string]string{}
-	}
-	svc.AutoPort = autoPortInt == 1
-	svc.AutoStart = autoStartInt == 1
-	svc.LANExposed = lanExposedInt == 1
-	svc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAtStr)
-	svc.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAtStr)
-
 	return &svc, nil
 }
 
 // ListServices returns all registered services.
 func (s *DB) ListServices(ctx context.Context) ([]Service, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	query := `
-	SELECT id, name, runtime, status, alias, command, args_json, cwd, env_json,
-	       port, auto_port, auto_start, restart_policy, lan_exposed, created_at, updated_at
-	FROM services ORDER BY name ASC
-	`
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, "SELECT "+serviceColumns+" FROM services ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -328,51 +358,26 @@ func (s *DB) ListServices(ctx context.Context) ([]Service, error) {
 
 	list := []Service{}
 	for rows.Next() {
-		var svc Service
-		var argsJSON, envJSON, createdAtStr, updatedAtStr string
-		var autoPortInt, autoStartInt, lanExposedInt int
-
-		err := rows.Scan(
-			&svc.ID, &svc.Name, &svc.Runtime, &svc.Status, &svc.Alias, &svc.Command,
-			&argsJSON, &svc.Cwd, &envJSON, &svc.Port,
-			&autoPortInt, &autoStartInt, &svc.RestartPolicy, &lanExposedInt,
-			&createdAtStr, &updatedAtStr,
-		)
+		svc, err := scanService(rows)
 		if err != nil {
 			return nil, err
 		}
-
-		_ = json.Unmarshal([]byte(argsJSON), &svc.Args)
-		if svc.Args == nil {
-			svc.Args = []string{}
-		}
-		_ = json.Unmarshal([]byte(envJSON), &svc.Env)
-		if svc.Env == nil {
-			svc.Env = map[string]string{}
-		}
-		svc.AutoPort = autoPortInt == 1
-		svc.AutoStart = autoStartInt == 1
-		svc.LANExposed = lanExposedInt == 1
-		svc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAtStr)
-		svc.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAtStr)
-
 		list = append(list, svc)
 	}
-
 	return list, rows.Err()
 }
 
 // DeleteService removes a service by ID.
 func (s *DB) DeleteService(ctx context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return s.deleteByID(ctx, "services", id)
+}
 
-	res, err := s.db.ExecContext(ctx, "DELETE FROM services WHERE id = ?", id)
+func (s *DB) deleteByID(ctx context.Context, table, id string) error {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM "+table+" WHERE id = ?", id)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
 	return nil
@@ -380,30 +385,22 @@ func (s *DB) DeleteService(ctx context.Context, id string) error {
 
 // UpdateServiceStatus updates only the status of a service.
 func (s *DB) UpdateServiceStatus(ctx context.Context, id, status string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(ctx, "UPDATE services SET status = ?, updated_at = ? WHERE id = ?", status, now, id)
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE services SET status = ?, updated_at = ? WHERE id = ?", status, formatTime(time.Now()), id)
 	return err
 }
 
 // SaveTunnel saves or updates an SSH tunnel definition.
 func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	extraArgsBytes, _ := json.Marshal(tun.ExtraArgs)
+	extraArgsJSON, err := json.Marshal(tun.ExtraArgs)
+	if err != nil {
+		return fmt.Errorf("encoding extra args: %w", err)
+	}
 	if tun.CreatedAt.IsZero() {
 		tun.CreatedAt = time.Now().UTC()
 	}
 
-	autoConnectInt := 0
-	if tun.AutoConnect {
-		autoConnectInt = 1
-	}
-
-	query := `
+	_, err = s.db.ExecContext(ctx, `
 	INSERT INTO tunnels (
 		id, alias, ssh_host, ssh_user, remote_host, remote_port, local_port,
 		identity_file, extra_args_json, auto_connect, created_at
@@ -417,37 +414,19 @@ func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
 		local_port=excluded.local_port,
 		identity_file=excluded.identity_file,
 		extra_args_json=excluded.extra_args_json,
-		auto_connect=excluded.auto_connect;
-	`
-
-	_, err := s.db.ExecContext(
-		ctx,
-		query,
-		tun.ID,
-		tun.Alias,
-		tun.SSHHost,
-		tun.SSHUser,
-		tun.RemoteHost,
-		tun.RemotePort,
-		tun.LocalPort,
-		tun.IdentityFile,
-		string(extraArgsBytes),
-		autoConnectInt,
-		tun.CreatedAt.Format(time.RFC3339Nano),
+		auto_connect=excluded.auto_connect`,
+		tun.ID, tun.Alias, tun.SSHHost, tun.SSHUser, tun.RemoteHost, tun.RemotePort, tun.LocalPort,
+		tun.IdentityFile, string(extraArgsJSON), boolToInt(tun.AutoConnect), formatTime(tun.CreatedAt),
 	)
 	return err
 }
 
 // ListTunnels returns all saved tunnels.
 func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	rows, err := s.db.QueryContext(ctx, `
 	SELECT id, alias, ssh_host, ssh_user, remote_host, remote_port, local_port,
 	       identity_file, extra_args_json, auto_connect, created_at
-	FROM tunnels ORDER BY alias ASC
-	`)
+	FROM tunnels ORDER BY alias ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -456,75 +435,70 @@ func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 	list := []Tunnel{}
 	for rows.Next() {
 		var tun Tunnel
-		var extraArgsJSON, createdAtStr string
-		var autoConnectInt int
+		var extraArgsJSON, createdAt string
+		var autoConnect int
 
 		err := rows.Scan(
 			&tun.ID, &tun.Alias, &tun.SSHHost, &tun.SSHUser, &tun.RemoteHost, &tun.RemotePort,
-			&tun.LocalPort, &tun.IdentityFile, &extraArgsJSON, &autoConnectInt, &createdAtStr,
+			&tun.LocalPort, &tun.IdentityFile, &extraArgsJSON, &autoConnect, &createdAt,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		_ = json.Unmarshal([]byte(extraArgsJSON), &tun.ExtraArgs)
+		tun.ExtraArgs = []string{}
+		if err := json.Unmarshal([]byte(extraArgsJSON), &tun.ExtraArgs); err != nil {
+			return nil, fmt.Errorf("decoding extra args of tunnel %q: %w", tun.ID, err)
+		}
 		if tun.ExtraArgs == nil {
 			tun.ExtraArgs = []string{}
 		}
-		tun.AutoConnect = autoConnectInt == 1
-		tun.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAtStr)
+		tun.AutoConnect = autoConnect == 1
+		if tun.CreatedAt, err = parseTime(createdAt, "created_at"); err != nil {
+			return nil, err
+		}
 		list = append(list, tun)
 	}
-
 	return list, rows.Err()
 }
 
 // DeleteTunnel removes a saved tunnel by ID.
 func (s *DB) DeleteTunnel(ctx context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return s.deleteByID(ctx, "tunnels", id)
+}
 
-	res, err := s.db.ExecContext(ctx, "DELETE FROM tunnels WHERE id = ?", id)
+// LogEvent records a structured audit event and periodically trims old ones.
+func (s *DB) LogEvent(ctx context.Context, eventType, serviceID, payload string) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		"INSERT INTO event_logs (timestamp, event_type, service_id, payload) VALUES (?, ?, ?, ?)",
+		formatTime(time.Now()), eventType, serviceID, payload,
+	)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return ErrNotFound
+
+	if s.eventWrites.Add(1)%pruneEveryWrites == 0 {
+		return s.pruneEvents(ctx)
 	}
 	return nil
 }
 
-// LogEvent records a structured audit event.
-func (s *DB) LogEvent(ctx context.Context, eventType, serviceID, payload string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(
-		ctx,
-		"INSERT INTO event_logs (timestamp, event_type, service_id, payload) VALUES (?, ?, ?, ?)",
-		now,
-		eventType,
-		serviceID,
-		payload,
-	)
+func (s *DB) pruneEvents(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx,
+		"DELETE FROM event_logs WHERE id <= (SELECT MAX(id) FROM event_logs) - ?", maxEventLogRows)
 	return err
 }
 
 // GetRecentEvents retrieves the most recent events bounded by limit.
 func (s *DB) GetRecentEvents(ctx context.Context, limit int) ([]EventLog, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	if limit <= 0 {
 		limit = 50
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
 	SELECT id, timestamp, event_type, service_id, payload
-	FROM event_logs ORDER BY id DESC LIMIT ?
-	`, limit)
+	FROM event_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -533,13 +507,14 @@ func (s *DB) GetRecentEvents(ctx context.Context, limit int) ([]EventLog, error)
 	events := []EventLog{}
 	for rows.Next() {
 		var ev EventLog
-		var tsStr string
-		if err := rows.Scan(&ev.ID, &tsStr, &ev.Type, &ev.ServiceID, &ev.Payload); err != nil {
+		var timestamp string
+		if err := rows.Scan(&ev.ID, &timestamp, &ev.Type, &ev.ServiceID, &ev.Payload); err != nil {
 			return nil, err
 		}
-		ev.Timestamp, _ = time.Parse(time.RFC3339Nano, tsStr)
+		if ev.Timestamp, err = parseTime(timestamp, "event timestamp"); err != nil {
+			return nil, err
+		}
 		events = append(events, ev)
 	}
-
 	return events, rows.Err()
 }
