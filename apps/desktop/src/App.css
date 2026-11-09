@@ -75,7 +75,28 @@ body {
   color: var(--paper);
   background: #0b0807;
   overflow: hidden;
+  user-select: text;
+}
+
+/* chrome stays unselectable; content (commands, ports, URLs, logs) is selectable */
+button,
+.btn,
+.icon-btn,
+.bottom-nav,
+.bottom-nav *,
+.sheet-head,
+.screen-title,
+.field > label,
+.select-btn,
+.select-list,
+.toast,
+.check {
   user-select: none;
+}
+
+/* links would otherwise start a drag instead of a text selection */
+a {
+  -webkit-user-drag: none;
 }
 
 svg {
