@@ -13,17 +13,17 @@ import (
 // JSONRPCRequest represents an incoming MCP request.
 type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id,omitempty"`
+	ID      any             `json:"id,omitempty"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
 // JSONRPCResponse represents an outgoing MCP response.
 type JSONRPCResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id,omitempty"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *RPCError   `json:"error,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      any       `json:"id,omitempty"`
+	Result  any       `json:"result,omitempty"`
+	Error   *RPCError `json:"error,omitempty"`
 }
 
 // RPCError is a standard JSON-RPC error.
@@ -34,9 +34,9 @@ type RPCError struct {
 
 // Tool represents an MCP tool definition.
 type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema interface{} `json:"inputSchema"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema any    `json:"inputSchema"`
 }
 
 // TextContent is an MCP content item.
@@ -87,14 +87,14 @@ func (s *Server) HandleRequest(ctx context.Context, req JSONRPCRequest) *JSONRPC
 
 	switch req.Method {
 	case "initialize":
-		resp.Result = map[string]interface{}{
+		resp.Result = map[string]any{
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]string{
 				"name":    "prot",
 				"version": s.version,
 			},
-			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{},
+			"capabilities": map[string]any{
+				"tools": map[string]any{},
 			},
 		}
 		return resp
@@ -103,19 +103,19 @@ func (s *Server) HandleRequest(ctx context.Context, req JSONRPCRequest) *JSONRPC
 		return nil // Notifications do not return a response
 
 	case "ping":
-		resp.Result = map[string]interface{}{}
+		resp.Result = map[string]any{}
 		return resp
 
 	case "tools/list":
-		resp.Result = map[string]interface{}{
+		resp.Result = map[string]any{
 			"tools": s.listTools(),
 		}
 		return resp
 
 	case "tools/call":
 		var params struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments"`
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			resp.Error = &RPCError{Code: -32602, Message: "Invalid params: " + err.Error()}

@@ -57,7 +57,7 @@ func TestDaemonLifecycle(t *testing.T) {
 		t.Errorf("expected 200 OK, got %d", resp.StatusCode)
 	}
 
-	var healthRes map[string]interface{}
+	var healthRes map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&healthRes); err != nil {
 		t.Fatalf("decode health response: %v", err)
 	}

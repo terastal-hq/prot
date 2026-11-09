@@ -90,7 +90,7 @@ func (s *Server) routes() {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"status":       "ok",
 		"version":      s.version,
 		"pid":          os.Getpid(),
@@ -154,7 +154,7 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"services": services,
 		"count":    len(services),
 	})
@@ -275,7 +275,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"service_id": id,
 		"logs":       logs,
 		"count":      len(logs),
@@ -324,7 +324,7 @@ func writeLogEvent(w http.ResponseWriter, entry supervisor.LogEntry) {
 
 func (s *Server) handleListDiscovery(w http.ResponseWriter, r *http.Request) {
 	services := s.reg.ListDiscovered()
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"services": services,
 		"count":    len(services),
 	})
@@ -354,7 +354,7 @@ func (s *Server) handleAdoptDiscovery(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListRoutes(w http.ResponseWriter, r *http.Request) {
 	routes := s.router.ListRoutes()
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"routes": routes,
 		"count":  len(routes),
 	})
@@ -391,7 +391,7 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	if s.tunnelsMgr != nil {
 		list = s.tunnelsMgr.List()
 	}
-	jsonOK(w, map[string]interface{}{
+	jsonOK(w, map[string]any{
 		"tunnels": list,
 		"count":   len(list),
 	})
@@ -451,12 +451,12 @@ func (s *Server) handleStopTunnel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func jsonOK(w http.ResponseWriter, data interface{}) {
+func jsonOK(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func jsonCreated(w http.ResponseWriter, data interface{}) {
+func jsonCreated(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(data)
@@ -465,7 +465,7 @@ func jsonCreated(w http.ResponseWriter, data interface{}) {
 func jsonErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error":   http.StatusText(code),
 		"message": msg,
 		"code":    code,

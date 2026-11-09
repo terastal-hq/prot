@@ -50,7 +50,7 @@ func TestMCPInitializeAndToolsList(t *testing.T) {
 	if resp.Error != nil {
 		t.Fatalf("initialize error: %+v", resp.Error)
 	}
-	resMap := resp.Result.(map[string]interface{})
+	resMap := resp.Result.(map[string]any)
 	if resMap["protocolVersion"] != "2024-11-05" {
 		t.Errorf("expected 2024-11-05, got %v", resMap["protocolVersion"])
 	}
@@ -65,7 +65,7 @@ func TestMCPInitializeAndToolsList(t *testing.T) {
 	if resp.Error != nil {
 		t.Fatalf("tools/list error: %+v", resp.Error)
 	}
-	toolsMap := resp.Result.(map[string]interface{})
+	toolsMap := resp.Result.(map[string]any)
 	tools := toolsMap["tools"].([]Tool)
 	if len(tools) < 5 {
 		t.Errorf("expected at least 5 tools, got %d", len(tools))

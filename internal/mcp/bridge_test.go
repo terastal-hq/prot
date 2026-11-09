@@ -15,18 +15,18 @@ func staticEndpoint(url, token string) Resolver {
 	return func() (Endpoint, error) { return Endpoint{URL: url, Token: token}, nil }
 }
 
-func runBridge(t *testing.T, resolve Resolver, input string) []map[string]interface{} {
+func runBridge(t *testing.T, resolve Resolver, input string) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
 	if err := NewBridge(resolve).ServeStdio(context.Background(), strings.NewReader(input), &out); err != nil {
 		t.Fatalf("ServeStdio: %v", err)
 	}
-	var msgs []map[string]interface{}
+	var msgs []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
 		if line == "" {
 			continue
 		}
-		var m map[string]interface{}
+		var m map[string]any
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Fatalf("bridge wrote invalid JSON %q: %v", line, err)
 		}
@@ -63,7 +63,7 @@ func TestBridgeForwardsToServerWithToken(t *testing.T) {
 	if msgs[0]["id"] != float64(1) || msgs[1]["id"] != "abc" {
 		t.Errorf("ids not preserved: %v %v", msgs[0]["id"], msgs[1]["id"])
 	}
-	if tools := msgs[1]["result"].(map[string]interface{})["tools"].([]interface{}); len(tools) == 0 {
+	if tools := msgs[1]["result"].(map[string]any)["tools"].([]any); len(tools) == 0 {
 		t.Error("tools/list returned no tools")
 	}
 }
@@ -76,7 +76,7 @@ func TestBridgeReportsUnavailableDaemon(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("expected one error reply, got %v", msgs)
 	}
-	errObj := msgs[0]["error"].(map[string]interface{})
+	errObj := msgs[0]["error"].(map[string]any)
 	if errObj["code"] != float64(codeDaemonUnavailable) || !strings.Contains(errObj["message"].(string), "protd") {
 		t.Errorf("unexpected error: %v", errObj)
 	}
@@ -103,7 +103,7 @@ func TestBridgeReportsRejectedToken(t *testing.T) {
 	defer ts.Close()
 
 	msgs := runBridge(t, staticEndpoint(ts.URL, "bad"), `{"jsonrpc":"2.0","id":2,"method":"ping"}`+"\n")
-	errObj := msgs[0]["error"].(map[string]interface{})
+	errObj := msgs[0]["error"].(map[string]any)
 	if errObj["code"] != float64(codeDaemonRejected) || !strings.Contains(errObj["message"].(string), "401") {
 		t.Errorf("unexpected error: %v", errObj)
 	}
@@ -111,7 +111,7 @@ func TestBridgeReportsRejectedToken(t *testing.T) {
 
 func TestBridgeParseError(t *testing.T) {
 	msgs := runBridge(t, staticEndpoint("http://127.0.0.1:1", ""), "not json\n")
-	if len(msgs) != 1 || msgs[0]["error"].(map[string]interface{})["code"] != float64(-32700) {
+	if len(msgs) != 1 || msgs[0]["error"].(map[string]any)["code"] != float64(-32700) {
 		t.Fatalf("expected parse error, got %v", msgs)
 	}
 	if id, ok := msgs[0]["id"]; !ok || id != nil {

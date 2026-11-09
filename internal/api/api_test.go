@@ -58,7 +58,7 @@ func TestAPIHealth(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d", rec.Code)
 	}
 
-	var res map[string]interface{}
+	var res map[string]any
 	_ = json.NewDecoder(rec.Body).Decode(&res)
 	if res["status"] != "ok" || res["version"] != "0.1.0-test" {
 		t.Errorf("unexpected health body: %+v", res)

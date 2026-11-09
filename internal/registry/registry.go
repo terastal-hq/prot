@@ -44,10 +44,10 @@ type ServiceView struct {
 
 // Event represents a broadcast event for subscribers.
 type Event struct {
-	Type      string      `json:"type"`
-	ServiceID string      `json:"service_id,omitempty"`
-	Timestamp time.Time   `json:"timestamp"`
-	Data      interface{} `json:"data"`
+	Type      string    `json:"type"`
+	ServiceID string    `json:"service_id,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	Data      any       `json:"data"`
 }
 
 // Registry is the unified domain authority for services, routes, and tunnels.
@@ -118,7 +118,7 @@ func (r *Registry) handleSupervisorStatus(serviceID, status string, port uint32)
 		Type:      "service.status",
 		ServiceID: serviceID,
 		Timestamp: time.Now().UTC(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"status": status,
 			"port":   port,
 		},
@@ -138,7 +138,7 @@ func (r *Registry) SetDiscovered(services []discovery.ProcessService) {
 	r.Broadcast(Event{
 		Type:      "discovery.updated",
 		Timestamp: time.Now().UTC(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"count": len(services),
 		},
 	})
@@ -305,7 +305,7 @@ type ServicePatch struct {
 	LANExposed    *bool              `json:"lan_exposed"`
 }
 
-func invalidField(format string, args ...interface{}) error {
+func invalidField(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidField, fmt.Sprintf(format, args...))
 }
 

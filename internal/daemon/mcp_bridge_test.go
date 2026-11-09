@@ -21,7 +21,7 @@ type bridgeSession struct {
 	nextID int
 }
 
-func (s *bridgeSession) call(method, params string) map[string]interface{} {
+func (s *bridgeSession) call(method, params string) map[string]any {
 	s.t.Helper()
 	s.nextID++
 	line := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":%q,"params":%s}`+"\n", s.nextID, method, params)
@@ -29,7 +29,7 @@ func (s *bridgeSession) call(method, params string) map[string]interface{} {
 	if err := s.bridge.ServeStdio(context.Background(), strings.NewReader(line), &out); err != nil {
 		s.t.Fatalf("bridge: %v", err)
 	}
-	var msg map[string]interface{}
+	var msg map[string]any
 	if err := json.Unmarshal(out.Bytes(), &msg); err != nil {
 		s.t.Fatalf("bad bridge output %q: %v", out.String(), err)
 	}
@@ -42,8 +42,8 @@ func (s *bridgeSession) call(method, params string) map[string]interface{} {
 func (s *bridgeSession) tool(name, args string) (string, bool) {
 	s.t.Helper()
 	msg := s.call("tools/call", fmt.Sprintf(`{"name":%q,"arguments":%s}`, name, args))
-	result := msg["result"].(map[string]interface{})
-	text := result["content"].([]interface{})[0].(map[string]interface{})["text"].(string)
+	result := msg["result"].(map[string]any)
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
 	isErr, _ := result["isError"].(bool)
 	return text, isErr
 }
