@@ -11,7 +11,8 @@ Prot is a local-first developer utility and control plane that discovers, organi
 It provides stable service identities and addresses (`http://<alias>.localhost`) independent of underlying process IDs, TCP ports, and infrastructure locations.
 
 <p align="center">
-  <img src="docs/assets/prot-desktop-ui.png" alt="prot desktop app" width="340" />
+  <img src="docs/assets/before-after.svg" alt="Animation: before prot, four terminals, guessed ports and address-in-use errors; after prot, one window with stable localhost names for every server." width="480" />&nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/prot-desktop-ui.png" alt="prot desktop app" width="314" />
 </p>
 
 <img src="docs/assets/headings/quick-install.svg" alt="Quick Install" />
