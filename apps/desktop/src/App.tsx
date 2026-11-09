@@ -276,6 +276,31 @@ function HostCombo(props: {
   );
 }
 
+/** Replaces a card's buttons while it asks whether to remove it. Cancel has focus, so Enter cannot delete by habit. */
+function ConfirmRemove(props: { question: string; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div
+      className="confirm-row"
+      role="alertdialog"
+      aria-label={props.question}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          props.onCancel();
+        }
+      }}
+    >
+      <span className="confirm-text">{props.question}</span>
+      <button type="button" className="btn btn-sm" autoFocus onClick={props.onCancel}>
+        Cancel
+      </button>
+      <button type="button" className="btn btn-sm btn-remove" onClick={props.onConfirm}>
+        Delete
+      </button>
+    </div>
+  );
+}
+
 const inTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI__);
 
 /** Minimize and close; the OS title bar is disabled in tauri.conf.json, so the app header is the title bar. */
@@ -428,7 +453,8 @@ export function App() {
   const [adoptAlias, setAdoptAlias] = useState("");
 
   // Delete confirmation (two-step button)
-  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  // Id of the server or tunnel whose card is asking "Remove this ...?". There is no timeout: it stays until answered.
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
 
   // Settings
   const [adminUrl, setAdminUrl] = useState(client.getBaseUrl());
@@ -569,12 +595,7 @@ export function App() {
   };
 
   const handleDelete = (id: string) => {
-    if (armedDelete !== id) {
-      setArmedDelete(id);
-      window.setTimeout(() => setArmedDelete((cur) => (cur === id ? null : cur)), 3000);
-      return;
-    }
-    setArmedDelete(null);
+    setConfirmingRemove(null);
     run(() => client.deleteService(id));
   };
 
@@ -604,12 +625,7 @@ export function App() {
   };
 
   const handleDeleteTunnel = (id: string) => {
-    if (armedDelete !== id) {
-      setArmedDelete(id);
-      window.setTimeout(() => setArmedDelete((cur) => (cur === id ? null : cur)), 3000);
-      return;
-    }
-    setArmedDelete(null);
+    setConfirmingRemove(null);
     run(() => client.deleteTunnel(id));
   };
 
@@ -911,6 +927,13 @@ export function App() {
                         </button>
                       </div>
                     )}
+                    {confirmingRemove === s.id ? (
+                      <ConfirmRemove
+                        question="Remove this server?"
+                        onCancel={() => setConfirmingRemove(null)}
+                        onConfirm={() => handleDelete(s.id)}
+                      />
+                    ) : (
                     <div className="card-actions">
                       {s.status === "running" ? (
                         <button className="icon-btn danger" title="Stop" onClick={() => runLifecycle(s.id, () => client.stopService(s.id))}>
@@ -931,14 +954,11 @@ export function App() {
                         <Settings2 size={14} strokeWidth={2.5} />
                       </button>
                       <span className="spacer" />
-                      <button
-                        className={`icon-btn danger ${armedDelete === s.id ? "armed" : ""}`}
-                        title={armedDelete === s.id ? "Click again to remove" : "Remove"}
-                        onClick={() => handleDelete(s.id)}
-                      >
+                      <button className="icon-btn danger" title="Remove" onClick={() => setConfirmingRemove(s.id)}>
                         <Trash2 size={14} strokeWidth={2.5} />
                       </button>
                     </div>
+                    )}
                   </div>
                 );
               })
@@ -1046,6 +1066,15 @@ export function App() {
                     </a>
                   </div>
                   {t.last_error && t.state !== "connected" && <div className="card-error">{t.last_error}</div>}
+                  {confirmingRemove === t.config.id ? (
+                    <ConfirmRemove
+                      question={
+                        t.config.has_password ? "Remove this tunnel and its stored password?" : "Remove this tunnel?"
+                      }
+                      onCancel={() => setConfirmingRemove(null)}
+                      onConfirm={() => handleDeleteTunnel(t.config.id)}
+                    />
+                  ) : (
                   <div className="card-actions">
                     {active ? (
                       <button
@@ -1075,14 +1104,11 @@ export function App() {
                       <KeyRound size={14} strokeWidth={2.5} />
                     </button>
                     <span className="spacer" />
-                    <button
-                      className={`icon-btn danger ${armedDelete === t.config.id ? "armed" : ""}`}
-                      title={armedDelete === t.config.id ? "Click again to remove" : "Remove"}
-                      onClick={() => handleDeleteTunnel(t.config.id)}
-                    >
+                    <button className="icon-btn danger" title="Remove" onClick={() => setConfirmingRemove(t.config.id)}>
                       <Trash2 size={14} strokeWidth={2.5} />
                     </button>
                   </div>
+                  )}
                 </div>
               );
             })}

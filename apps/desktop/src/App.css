@@ -527,10 +527,31 @@ code {
   background: var(--gloss-red);
   filter: none;
 }
-.icon-btn.armed {
+/* The inline "Remove this ...?" row that replaces a card's buttons. */
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: var(--sunken);
+  border: 2px solid;
+  border-color: var(--inset);
+}
+.confirm-text {
+  flex: 1 1 160px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--paper);
+}
+.btn-remove {
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
   background: var(--gloss-red);
   border-color: #ffb0a6 #5a0a06 #5a0a06 #ffb0a6;
-  animation: blink 0.5s steps(2) infinite;
+}
+.btn-remove:active {
+  border-color: #5a0a06 #ffb0a6 #ffb0a6 #5a0a06;
 }
 
 /* ------------------------------------------------------------------ */
