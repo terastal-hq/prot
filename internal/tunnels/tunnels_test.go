@@ -44,24 +44,6 @@ func TestTunnelRegistrationAndLookup(t *testing.T) {
 	}
 }
 
-func TestFindFreePort(t *testing.T) {
-	p1, err := FindFreePort()
-	if err != nil {
-		t.Fatalf("findFreePort failed: %v", err)
-	}
-	if p1 == 0 {
-		t.Errorf("expected non-zero port")
-	}
-
-	p2, err := FindFreePort()
-	if err != nil {
-		t.Fatalf("findFreePort second call failed: %v", err)
-	}
-	if p2 == 0 {
-		t.Errorf("expected non-zero port")
-	}
-}
-
 func TestTunnelInvalidConfig(t *testing.T) {
 	mgr, err := NewManager()
 	if err != nil {

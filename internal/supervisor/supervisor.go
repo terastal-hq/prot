@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/storage"
-	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
 // LogEntry represents a single captured log line.
@@ -201,7 +200,7 @@ func (s *Supervisor) launchProcess(rp *runningProcess) error {
 	// Port assignment
 	assignedPort := svc.Port
 	if svc.AutoPort {
-		freePort, err := tunnels.FindFreePort()
+		freePort, err := netutil.FreePort()
 		if err != nil {
 			return fmt.Errorf("allocating auto port: %w", err)
 		}
@@ -281,7 +280,7 @@ func (s *Supervisor) monitorProcess(rp *runningProcess, cmd *exec.Cmd, port uint
 			procCtx := rp.ctx
 			rp.mu.RUnlock()
 
-			if waitForPortReady(procCtx, port, 10*time.Second) {
+			if netutil.WaitForPort(procCtx, port, 10*time.Second) {
 				rp.mu.Lock()
 				if rp.state.Status == "starting" {
 					rp.state.Status = "running"
@@ -370,25 +369,6 @@ func captureOutput(r io.Reader, ring *LogRing, stream string) {
 	for scanner.Scan() {
 		ring.Append(stream, scanner.Text())
 	}
-}
-
-func waitForPortReady(ctx context.Context, port uint32, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return false
-		default:
-		}
-		conn, err := net.DialTimeout("tcp", addr, 150*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return true
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
 }
 
 // Stop terminates the process group gracefully.

@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os/exec"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/terastal-hq/prot/internal/netutil"
 )
 
 // State represents the lifecycle status of an SSH tunnel.
@@ -229,7 +230,7 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 	localPort := st.cfg.LocalPort
 	if localPort == 0 {
-		freePort, err := findFreePort()
+		freePort, err := netutil.FreePort()
 		if err != nil {
 			return fmt.Errorf("allocate local port: %w", err)
 		}
@@ -271,7 +272,7 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 	m.mu.Unlock()
 
 	// Wait for local port readiness (up to 3 seconds)
-	ready := waitForPort(ctx, localPort, 3*time.Second)
+	ready := netutil.WaitForPort(ctx, localPort, 3*time.Second)
 	if !ready {
 		// Check if process exited early
 		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
@@ -297,37 +298,4 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		return fmt.Errorf("ssh session ended: %w", err)
 	}
 	return nil
-}
-
-func findFreePort() (uint32, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	return uint32(ln.Addr().(*net.TCPAddr).Port), nil
-}
-
-func waitForPort(ctx context.Context, port uint32, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return false
-		default:
-		}
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return true
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return false
-}
-
-// FindFreePort exported helper
-func FindFreePort() (uint32, error) {
-	return findFreePort()
 }
