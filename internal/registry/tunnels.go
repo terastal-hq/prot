@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/terastal-hq/prot/internal/netutil"
+	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
@@ -37,6 +38,9 @@ func (r *Registry) canonicalURL(alias string) string {
 	return fmt.Sprintf("http://%s.localhost", alias)
 }
 
+// ErrPasswordsUnavailable is returned when a password is given but there is nowhere safe to keep it.
+var ErrPasswordsUnavailable = errors.New("cannot store a password: no OS keyring (Secret Service) is available")
+
 func tunnelToStorage(cfg tunnels.TunnelConfig) storage.Tunnel {
 	return storage.Tunnel{
 		ID:           cfg.ID,
@@ -49,6 +53,7 @@ func tunnelToStorage(cfg tunnels.TunnelConfig) storage.Tunnel {
 		IdentityFile: cfg.IdentityFile,
 		ExtraArgs:    cfg.ExtraArgs,
 		AutoConnect:  cfg.AutoConnect,
+		HasPassword:  cfg.HasPassword,
 	}
 }
 
@@ -64,7 +69,34 @@ func tunnelFromStorage(t storage.Tunnel) tunnels.TunnelConfig {
 		IdentityFile: t.IdentityFile,
 		ExtraArgs:    t.ExtraArgs,
 		AutoConnect:  t.AutoConnect,
+		HasPassword:  t.HasPassword,
 	}
+}
+
+// tunnelSecret is the tunnel manager's lookup for a stored password, called on every connection attempt.
+func (r *Registry) tunnelSecret(tunnelID string) (string, error) {
+	if r.secrets == nil {
+		return "", ErrPasswordsUnavailable
+	}
+	secret, err := r.secrets.Get(secrets.TunnelKey(tunnelID))
+	if errors.Is(err, secrets.ErrNotFound) {
+		return "", errors.New("the stored password is missing from the keyring; set it again with 'prot tunnel password'")
+	}
+	return secret, err
+}
+
+// checkPassword validates a password before it is stored and confirms there is somewhere to store it.
+func (r *Registry) checkPassword(password string) error {
+	if r.secrets == nil {
+		return ErrPasswordsUnavailable
+	}
+	if password == "" {
+		return invalidField("password cannot be empty")
+	}
+	if strings.ContainsAny(password, "\r\n") {
+		return invalidField("password cannot contain a line break")
+	}
+	return nil
 }
 
 // handleTunnelState keeps the .localhost route pointed at the tunnel's local end and tells subscribers.
@@ -95,12 +127,23 @@ func (r *Registry) aliasInUseByTunnel(alias, exceptTunnelID string) bool {
 // TunnelsAvailable reports whether SSH tunnels can run here.
 func (r *Registry) TunnelsAvailable() bool { return r.tunnels != nil }
 
-// RegisterTunnel validates, saves and registers a tunnel, gives it a .localhost route and, when auto_connect is
-// set, connects it.
+// RegisterTunnel registers a tunnel that authenticates with keys or ssh-agent.
 func (r *Registry) RegisterTunnel(ctx context.Context, cfg tunnels.TunnelConfig) (*TunnelView, error) {
+	return r.RegisterTunnelWithPassword(ctx, cfg, "")
+}
+
+// RegisterTunnelWithPassword validates, saves and registers a tunnel, gives it a .localhost route and, when
+// auto_connect is set, connects it. A non-empty password (or key passphrase) goes into the OS keyring; nothing
+// is saved if it cannot be stored.
+func (r *Registry) RegisterTunnelWithPassword(
+	ctx context.Context,
+	cfg tunnels.TunnelConfig,
+	password string,
+) (*TunnelView, error) {
 	if r.tunnels == nil {
 		return nil, ErrTunnelsUnavailable
 	}
+	cfg.HasPassword = false // set below, from whether a password was really stored
 
 	cfg.Alias = strings.ToLower(strings.TrimSpace(cfg.Alias))
 	if !aliasPattern.MatchString(cfg.Alias) {
@@ -126,12 +169,29 @@ func (r *Registry) RegisterTunnel(ctx context.Context, cfg tunnels.TunnelConfig)
 		}
 	}
 
+	if password != "" {
+		if err := r.checkPassword(password); err != nil {
+			return nil, err
+		}
+		if err := r.secrets.Set(secrets.TunnelKey(cfg.ID), password); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrPasswordsUnavailable, err)
+		}
+		cfg.HasPassword = true
+	}
+	discardSecret := func() {
+		if cfg.HasPassword {
+			_ = r.secrets.Delete(secrets.TunnelKey(cfg.ID))
+		}
+	}
+
 	st, err := r.tunnels.Register(cfg)
 	if err != nil {
+		discardSecret()
 		return nil, invalidField("%s", err)
 	}
 	if err := r.db.SaveTunnel(ctx, tunnelToStorage(st.Config)); err != nil {
 		_ = r.tunnels.Remove(cfg.ID)
+		discardSecret()
 		return nil, fmt.Errorf("saving tunnel: %w", err)
 	}
 
@@ -264,6 +324,11 @@ func (r *Registry) DeleteTunnel(ctx context.Context, idOrAlias string) error {
 	if err := r.db.DeleteTunnel(ctx, id); err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return fmt.Errorf("deleting tunnel: %w", err)
 	}
+	if st != nil && st.Config.HasPassword && r.secrets != nil {
+		if err := r.secrets.Delete(secrets.TunnelKey(id)); err != nil {
+			log.Printf("registry: removing the stored password of tunnel %q from the keyring: %v", id, err)
+		}
+	}
 	_ = r.db.LogEvent(ctx, "tunnel.deleted", id, "")
 	r.Broadcast(Event{Type: "tunnel.deleted", Timestamp: time.Now().UTC(), Data: map[string]string{"id": id}})
 	return nil
@@ -302,6 +367,51 @@ func (r *Registry) RestoreTunnels(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// SetTunnelPassword stores or replaces a tunnel's password (or key passphrase) in the OS keyring. It takes effect
+// on the next connection attempt: reconnect the tunnel, or let a retrying one pick it up.
+func (r *Registry) SetTunnelPassword(ctx context.Context, idOrAlias, password string) (*TunnelView, error) {
+	id, err := r.resolveTunnelID(idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.checkPassword(password); err != nil {
+		return nil, err
+	}
+	if err := r.secrets.Set(secrets.TunnelKey(id), password); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPasswordsUnavailable, err)
+	}
+	return r.setHasPassword(ctx, id, true)
+}
+
+// ClearTunnelPassword removes a tunnel's stored password; it goes back to keys and ssh-agent only.
+func (r *Registry) ClearTunnelPassword(ctx context.Context, idOrAlias string) (*TunnelView, error) {
+	id, err := r.resolveTunnelID(idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+	if r.secrets != nil {
+		if err := r.secrets.Delete(secrets.TunnelKey(id)); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrPasswordsUnavailable, err)
+		}
+	}
+	return r.setHasPassword(ctx, id, false)
+}
+
+func (r *Registry) setHasPassword(ctx context.Context, id string, has bool) (*TunnelView, error) {
+	if err := r.tunnels.SetHasPassword(id, has); err != nil {
+		return nil, err
+	}
+	st, ok := r.tunnels.GetStatus(id)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", tunnels.ErrNotFound, id)
+	}
+	if err := r.db.SaveTunnel(ctx, tunnelToStorage(st.Config)); err != nil {
+		return nil, fmt.Errorf("saving tunnel: %w", err)
+	}
+	view := r.tunnelView(*st)
+	return &view, nil
 }
 
 // StopAllTunnels disconnects every tunnel and waits for the ssh processes to exit.

@@ -54,17 +54,19 @@ type Service struct {
 
 // Tunnel represents a saved SSH tunnel definition.
 type Tunnel struct {
-	ID           string    `json:"id"`
-	Alias        string    `json:"alias"`
-	SSHHost      string    `json:"ssh_host"`
-	SSHUser      string    `json:"ssh_user"`
-	RemoteHost   string    `json:"remote_host"`
-	RemotePort   uint32    `json:"remote_port"`
-	LocalPort    uint32    `json:"local_port"`
-	IdentityFile string    `json:"identity_file,omitempty"`
-	ExtraArgs    []string  `json:"extra_args,omitempty"`
-	AutoConnect  bool      `json:"auto_connect"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string   `json:"id"`
+	Alias        string   `json:"alias"`
+	SSHHost      string   `json:"ssh_host"`
+	SSHUser      string   `json:"ssh_user"`
+	RemoteHost   string   `json:"remote_host"`
+	RemotePort   uint32   `json:"remote_port"`
+	LocalPort    uint32   `json:"local_port"`
+	IdentityFile string   `json:"identity_file,omitempty"`
+	ExtraArgs    []string `json:"extra_args,omitempty"`
+	AutoConnect  bool     `json:"auto_connect"`
+	// HasPassword records that a secret for this tunnel is kept in the OS keyring. The secret is never stored here.
+	HasPassword bool      `json:"has_password"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // EventLog represents an auditable local daemon event.
@@ -179,6 +181,8 @@ var migrations = []string{
 	DROP TABLE IF EXISTS workspace_services;
 	DROP TABLE IF EXISTS workspaces;
 	`,
+	// 3: tunnels can have a password or key passphrase kept in the OS keyring (only a flag lives here)
+	`ALTER TABLE tunnels ADD COLUMN has_password INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func (s *DB) migrate() error {
@@ -403,8 +407,8 @@ func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
 	_, err = s.db.ExecContext(ctx, `
 	INSERT INTO tunnels (
 		id, alias, ssh_host, ssh_user, remote_host, remote_port, local_port,
-		identity_file, extra_args_json, auto_connect, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		identity_file, extra_args_json, auto_connect, has_password, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		alias=excluded.alias,
 		ssh_host=excluded.ssh_host,
@@ -414,9 +418,11 @@ func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
 		local_port=excluded.local_port,
 		identity_file=excluded.identity_file,
 		extra_args_json=excluded.extra_args_json,
-		auto_connect=excluded.auto_connect`,
+		auto_connect=excluded.auto_connect,
+		has_password=excluded.has_password`,
 		tun.ID, tun.Alias, tun.SSHHost, tun.SSHUser, tun.RemoteHost, tun.RemotePort, tun.LocalPort,
-		tun.IdentityFile, string(extraArgsJSON), boolToInt(tun.AutoConnect), formatTime(tun.CreatedAt),
+		tun.IdentityFile, string(extraArgsJSON), boolToInt(tun.AutoConnect), boolToInt(tun.HasPassword),
+		formatTime(tun.CreatedAt),
 	)
 	return err
 }
@@ -425,7 +431,7 @@ func (s *DB) SaveTunnel(ctx context.Context, tun Tunnel) error {
 func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 	rows, err := s.db.QueryContext(ctx, `
 	SELECT id, alias, ssh_host, ssh_user, remote_host, remote_port, local_port,
-	       identity_file, extra_args_json, auto_connect, created_at
+	       identity_file, extra_args_json, auto_connect, has_password, created_at
 	FROM tunnels ORDER BY alias ASC`)
 	if err != nil {
 		return nil, err
@@ -436,11 +442,11 @@ func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 	for rows.Next() {
 		var tun Tunnel
 		var extraArgsJSON, createdAt string
-		var autoConnect int
+		var autoConnect, hasPassword int
 
 		err := rows.Scan(
 			&tun.ID, &tun.Alias, &tun.SSHHost, &tun.SSHUser, &tun.RemoteHost, &tun.RemotePort,
-			&tun.LocalPort, &tun.IdentityFile, &extraArgsJSON, &autoConnect, &createdAt,
+			&tun.LocalPort, &tun.IdentityFile, &extraArgsJSON, &autoConnect, &hasPassword, &createdAt,
 		)
 		if err != nil {
 			return nil, err
@@ -454,6 +460,7 @@ func (s *DB) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 			tun.ExtraArgs = []string{}
 		}
 		tun.AutoConnect = autoConnect == 1
+		tun.HasPassword = hasPassword == 1
 		if tun.CreatedAt, err = parseTime(createdAt, "created_at"); err != nil {
 			return nil, err
 		}

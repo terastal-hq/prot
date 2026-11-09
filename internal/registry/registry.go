@@ -13,6 +13,7 @@ import (
 	"github.com/terastal-hq/prot/internal/discovery"
 	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/proxy"
+	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/supervisor"
 	"github.com/terastal-hq/prot/internal/tunnels"
@@ -56,6 +57,7 @@ type Registry struct {
 	supervisor *supervisor.Supervisor
 	router     *proxy.Router
 	tunnels    *tunnels.Manager
+	secrets    secrets.Store
 
 	mu          sync.RWMutex
 	discovered  map[string]discovery.ProcessService
@@ -72,7 +74,8 @@ type Config struct {
 	DB          *storage.DB
 	Router      *proxy.Router
 	Tunnels     *tunnels.Manager
-	GatewayHost string // e.g. "localhost:8080"
+	Secrets     secrets.Store // keeps tunnel passwords; nil disables them
+	GatewayHost string        // e.g. "localhost:8080"
 }
 
 // New constructs a Registry.
@@ -81,6 +84,7 @@ func New(cfg Config) *Registry {
 		db:          cfg.DB,
 		router:      cfg.Router,
 		tunnels:     cfg.Tunnels,
+		secrets:     cfg.Secrets,
 		gatewayHost: cfg.GatewayHost,
 		discovered:  make(map[string]discovery.ProcessService),
 		subscribers: make(map[chan Event]struct{}),
@@ -91,6 +95,7 @@ func New(cfg Config) *Registry {
 	})
 	if r.tunnels != nil {
 		r.tunnels.SetObserver(r.handleTunnelState)
+		r.tunnels.SetSecretProvider(r.tunnelSecret)
 	}
 
 	return r

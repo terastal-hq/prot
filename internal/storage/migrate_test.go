@@ -225,3 +225,41 @@ func TestEventLogIsTrimmed(t *testing.T) {
 		t.Fatalf("newest event missing after trimming: %v %v", recent, err)
 	}
 }
+
+// A database from before tunnels could have a password: its tunnels must survive with the flag off.
+func TestTunnelsGainTheHasPasswordFlagWithoutLosingData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prot.db")
+	raw := openRaw(t, path)
+	for _, stmt := range []string{
+		migrations[0], migrations[1], "PRAGMA user_version = 2",
+		`INSERT INTO tunnels VALUES ('t-old','db','bastion','me','127.0.0.1',5432,15432,'','[]',1,'2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("seeding v2 database: %v", err)
+		}
+	}
+	_ = raw.Close()
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	got, err := db.ListTunnels(ctx)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("tunnels after upgrade: %+v, %v", got, err)
+	}
+	if got[0].Alias != "db" || got[0].RemotePort != 5432 || !got[0].AutoConnect || got[0].HasPassword {
+		t.Errorf("upgraded row = %+v", got[0])
+	}
+
+	got[0].HasPassword = true
+	if err := db.SaveTunnel(ctx, got[0]); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := db.ListTunnels(ctx); !again[0].HasPassword {
+		t.Error("HasPassword did not round-trip")
+	}
+}

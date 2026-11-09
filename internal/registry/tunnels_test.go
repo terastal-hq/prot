@@ -13,6 +13,7 @@ import (
 
 	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/proxy"
+	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
@@ -51,10 +52,11 @@ func fakeSSH(args []string) int {
 }
 
 type tunnelEnv struct {
-	reg    *Registry
-	db     *storage.DB
-	router *proxy.Router
-	mgr    *tunnels.Manager
+	reg     *Registry
+	db      *storage.DB
+	router  *proxy.Router
+	mgr     *tunnels.Manager
+	secrets *secrets.Memory
 }
 
 func newTunnelEnv(t *testing.T, db *storage.DB) *tunnelEnv {
@@ -71,8 +73,10 @@ func newTunnelEnv(t *testing.T, db *storage.DB) *tunnelEnv {
 		}
 		t.Cleanup(func() { _ = db.Close() })
 	}
-	env := &tunnelEnv{db: db, router: proxy.NewRouter(), mgr: tunnels.NewManagerWithSSH(self)}
-	env.reg = New(Config{DB: db, Router: env.router, Tunnels: env.mgr, GatewayHost: "8080"})
+	env := &tunnelEnv{
+		db: db, router: proxy.NewRouter(), mgr: tunnels.NewManagerWithSSH(self), secrets: secrets.NewMemory(),
+	}
+	env.reg = New(Config{DB: db, Router: env.router, Tunnels: env.mgr, Secrets: env.secrets, GatewayHost: "8080"})
 	t.Cleanup(env.reg.StopAllTunnels)
 	return env
 }

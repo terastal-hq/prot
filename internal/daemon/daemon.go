@@ -20,6 +20,7 @@ import (
 	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
+	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/security"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
@@ -34,6 +35,9 @@ type Config struct {
 	GatewayAddr string `json:"gateway_addr"`       // Proxy listener e.g. 127.0.0.1:8080
 	AdminAddr   string `json:"admin_addr"`         // Loopback API listener e.g. 127.0.0.1:4400
 	SSHPath     string `json:"ssh_path,omitempty"` // ssh binary for tunnels; empty searches PATH
+
+	// Secrets keeps tunnel passwords. Nil means the OS keyring.
+	Secrets secrets.Store `json:"-"`
 }
 
 // DefaultConfig returns standard paths and loopback listeners.
@@ -104,6 +108,11 @@ func New(cfg Config) (*Daemon, error) {
 		tunMgr = mgr
 	}
 
+	secretStore := cfg.Secrets
+	if secretStore == nil {
+		secretStore = secrets.Keyring{}
+	}
+
 	// 4. Initialize Dynamic Reverse Proxy Router & Server
 	router := proxy.NewRouter()
 	proxySrv := proxy.NewServer(router, proxy.ServerOptions{
@@ -121,6 +130,7 @@ func New(cfg Config) (*Daemon, error) {
 		DB:          db,
 		Router:      router,
 		Tunnels:     tunMgr,
+		Secrets:     secretStore,
 		GatewayHost: gwPort,
 	})
 

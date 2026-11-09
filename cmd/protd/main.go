@@ -10,10 +10,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/terastal-hq/prot/internal/askpass"
 	"github.com/terastal-hq/prot/internal/daemon"
 )
 
 func main() {
+	// ssh runs protd as its askpass helper for tunnels with a stored password (see package askpass). That is a
+	// one-shot job: answer the prompt and exit instead of starting a daemon.
+	if askpass.Requested(os.Getenv) {
+		os.Exit(askpass.Run(os.Args[1:], os.Getenv, os.Stdout))
+	}
+
 	gatewayAddr := flag.String("gateway", "127.0.0.1:8080", "Proxy gateway address to listen on")
 	adminAddr := flag.String("admin", "127.0.0.1:4400", "Loopback management API address")
 	dataDir := flag.String("data-dir", "", "Configuration and state directory (default $PROT_DATA_DIR, then ~/.prot)")

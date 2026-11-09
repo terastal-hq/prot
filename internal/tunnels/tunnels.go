@@ -268,6 +268,21 @@ func (m *Manager) stop(st *supervisedTunnel) {
 	m.emit(st)
 }
 
+// SetHasPassword records whether the tunnel has a stored password. It applies from the next connection attempt,
+// so a tunnel that is retrying picks a new password up by itself.
+func (m *Manager) SetHasPassword(id string, has bool) error {
+	st, err := m.lookup(id)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	st.cfg.HasPassword = has
+	st.status.Config.HasPassword = has
+	m.mu.Unlock()
+	m.emit(st)
+	return nil
+}
+
 // StopAll stops every tunnel in parallel and waits for them. The daemon calls it on shutdown so no ssh process
 // outlives it.
 func (m *Manager) StopAll() {
