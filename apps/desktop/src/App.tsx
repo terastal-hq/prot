@@ -164,22 +164,17 @@ function Field(props: {
 
 const inTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI__);
 
-/** Custom window frame: the OS title bar is disabled in tauri.conf.json. */
-function TitleBar() {
+/** Minimize and close; the OS title bar is disabled in tauri.conf.json, so the app header is the title bar. */
+function WindowControls() {
   const win = getCurrentWindow();
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <span className="titlebar-text" data-tauri-drag-region>
-        prot
-      </span>
-      <div className="titlebar-btns">
-        <button type="button" title="Minimize" aria-label="Minimize" onClick={() => win.minimize()}>
-          <Minus size={12} strokeWidth={3} />
-        </button>
-        <button type="button" className="close" title="Close" aria-label="Close" onClick={() => win.close()}>
-          <X size={12} strokeWidth={3} />
-        </button>
-      </div>
+    <div className="win-btns">
+      <button type="button" title="Minimize" aria-label="Minimize" onClick={() => win.minimize()}>
+        <Minus size={12} strokeWidth={3} />
+      </button>
+      <button type="button" className="close" title="Close" aria-label="Close" onClick={() => win.close()}>
+        <X size={12} strokeWidth={3} />
+      </button>
     </div>
   );
 }
@@ -532,9 +527,8 @@ export function App() {
 
   return (
     <div className={`app ${inTauri ? "framed" : ""}`}>
-      {inTauri && <TitleBar />}
-      <header className="app-header">
-        <img src={wordmark} alt="prot" />
+      <header className="app-header" data-tauri-drag-region>
+        <img src={wordmark} alt="prot" data-tauri-drag-region />
         <div className="header-right">
           <span className={`daemon-chip ${isOnline ? "" : "offline"}`}>
             <span className="sq" aria-hidden="true" />
@@ -549,6 +543,7 @@ export function App() {
           >
             <GearIcon />
           </button>
+          {inTauri && <WindowControls />}
         </div>
       </header>
 

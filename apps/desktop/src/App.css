@@ -144,36 +144,17 @@ svg {
   outline-offset: -1px;
 }
 
-.titlebar {
+/* min/close live in the app header, which doubles as the title bar */
+.win-btns {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 30px;
-  padding: 0 4px 0 10px;
-  flex-shrink: 0;
-  background: linear-gradient(180deg, #4a4f51, #2b2f31);
-  border-bottom: 2px solid var(--metal-lo);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  flex-direction: column;
+  gap: 4px;
+  align-self: flex-start;
+  margin: -2px -4px 0 2px;
 }
-.titlebar-text {
-  flex: 1;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  font-family: var(--font-wordart);
-  font-size: 15px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--paper);
-  text-shadow: 1px 1px 0 #000;
-}
-.titlebar-btns {
-  display: flex;
-  gap: 3px;
-}
-.titlebar-btns button {
+.win-btns button {
   width: 26px;
-  height: 20px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -183,14 +164,14 @@ svg {
   border-color: var(--raised);
   cursor: pointer;
 }
-.titlebar-btns button:hover {
+.win-btns button:hover {
   filter: brightness(1.2);
 }
-.titlebar-btns button:active {
+.win-btns button:active {
   border-color: var(--inset);
   filter: none;
 }
-.titlebar-btns .close:hover {
+.win-btns .close:hover {
   background: var(--gloss-red);
   filter: none;
 }
@@ -214,6 +195,11 @@ svg {
   height: 44px;
   width: auto;
   filter: drop-shadow(-2px 2px 0 #000);
+}
+
+.app-header img,
+.daemon-chip {
+  pointer-events: none; /* lets the header's drag region receive the mouse */
 }
 
 .header-right {
