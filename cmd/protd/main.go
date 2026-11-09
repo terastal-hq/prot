@@ -16,7 +16,7 @@ import (
 func main() {
 	gatewayAddr := flag.String("gateway", "127.0.0.1:8080", "Proxy gateway address to listen on")
 	adminAddr := flag.String("admin", "127.0.0.1:4400", "Loopback management API address")
-	dataDir := flag.String("data-dir", "", "Configuration and state directory (default ~/.prot)")
+	dataDir := flag.String("data-dir", "", "Configuration and state directory (default $PROT_DATA_DIR, then ~/.prot)")
 	versionFlag := flag.Bool("version", false, "Print daemon version and exit")
 	flag.Parse()
 
@@ -32,8 +32,12 @@ func main() {
 	if *adminAddr != "" {
 		cfg.AdminAddr = *adminAddr
 	}
+	// Same precedence the CLI uses, so prot and protd always agree on where state lives:
+	// the -data-dir flag, then PROT_DATA_DIR, then ~/.prot.
 	if *dataDir != "" {
 		cfg.DataDir = *dataDir
+	} else if env := os.Getenv("PROT_DATA_DIR"); env != "" {
+		cfg.DataDir = env
 	}
 
 	d, err := daemon.New(cfg)
