@@ -85,6 +85,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/start", s.handleStartTunnel)
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/stop", s.handleStopTunnel)
 	s.mux.HandleFunc("DELETE /v1/tunnels/{id}", s.handleDeleteTunnel)
+	s.mux.HandleFunc("PUT /v1/tunnels/{id}/password", s.handleSetTunnelPassword)
+	s.mux.HandleFunc("DELETE /v1/tunnels/{id}/password", s.handleClearTunnelPassword)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +391,7 @@ func writeTunnelError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, tunnels.ErrNotFound):
 		jsonErr(w, http.StatusNotFound, "tunnel not found")
-	case errors.Is(err, registry.ErrTunnelsUnavailable):
+	case errors.Is(err, registry.ErrTunnelsUnavailable), errors.Is(err, registry.ErrPasswordsUnavailable):
 		jsonErr(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, registry.ErrInvalidAlias), errors.Is(err, registry.ErrInvalidField):
 		jsonErr(w, http.StatusBadRequest, err.Error())
@@ -408,14 +410,21 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// createTunnelRequest is a tunnel definition plus an optional write-only password (or key passphrase). The
+// password goes to the OS keyring and is never returned by any endpoint.
+type createTunnelRequest struct {
+	tunnels.TunnelConfig
+	Password string `json:"password,omitempty"`
+}
+
 func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
-	var cfg tunnels.TunnelConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	var req createTunnelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request json")
 		return
 	}
 
-	view, err := s.reg.RegisterTunnel(r.Context(), cfg)
+	view, err := s.reg.RegisterTunnelWithPassword(r.Context(), req.TunnelConfig, req.Password)
 	if err != nil {
 		writeTunnelError(w, err)
 		return
@@ -434,6 +443,31 @@ func (s *Server) handleStartTunnel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStopTunnel(w http.ResponseWriter, r *http.Request) {
 	view, err := s.reg.StopTunnel(r.PathValue("id"))
+	if err != nil {
+		writeTunnelError(w, err)
+		return
+	}
+	jsonOK(w, view)
+}
+
+func (s *Server) handleSetTunnelPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request json")
+		return
+	}
+	view, err := s.reg.SetTunnelPassword(r.Context(), r.PathValue("id"), body.Password)
+	if err != nil {
+		writeTunnelError(w, err)
+		return
+	}
+	jsonOK(w, view)
+}
+
+func (s *Server) handleClearTunnelPassword(w http.ResponseWriter, r *http.Request) {
+	view, err := s.reg.ClearTunnelPassword(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeTunnelError(w, err)
 		return

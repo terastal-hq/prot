@@ -233,11 +233,17 @@ paths:
                 identity_file: { type: string }
                 extra_args: { type: array, items: { type: string }, description: "Extra ssh arguments, for example -p 2222" }
                 auto_connect: { type: boolean }
+                password:
+                  type: string
+                  writeOnly: true
+                  description: >
+                    Optional SSH password or key passphrase. Stored in the OS keyring, never returned; responses only
+                    carry has_password. Refused (501) when no keyring is available.
       responses:
         "201": { description: Tunnel registered }
-        "400": { description: Invalid alias or field }
+        "400": { description: Invalid alias, field or password }
         "409": { description: Alias already used by a service or tunnel }
-        "501": { description: ssh is not installed }
+        "501": { description: ssh is not installed, or a password was given but no keyring is available }
   /v1/tunnels/{id}:
     delete:
       summary: Disconnect and delete a tunnel
@@ -245,6 +251,34 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
       responses:
         "204": { description: Tunnel removed }
+        "404": { description: Unknown tunnel }
+  /v1/tunnels/{id}/password:
+    put:
+      summary: Store or replace a tunnel's password
+      description: >
+        Kept in the OS keyring. Applies from the next connection attempt; a retrying tunnel picks it up by itself.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, writeOnly: true }
+      responses:
+        "200": { description: Tunnel status (has_password is true) }
+        "400": { description: Empty password or one containing a line break }
+        "404": { description: Unknown tunnel }
+        "501": { description: No keyring available }
+    delete:
+      summary: Remove a tunnel's stored password
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      responses:
+        "200": { description: Tunnel status (has_password is false) }
         "404": { description: Unknown tunnel }
   /v1/tunnels/{id}/start:
     post:

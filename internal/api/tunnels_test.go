@@ -12,12 +12,18 @@ import (
 
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
+	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
 // tunnelServer is an API server whose tunnel manager runs a fake ssh that just stays alive.
 func tunnelServer(t *testing.T) *Server {
+	t.Helper()
+	return tunnelServerWithSecrets(t, nil)
+}
+
+func tunnelServerWithSecrets(t *testing.T, store secrets.Store) *Server {
 	t.Helper()
 	ssh := filepath.Join(t.TempDir(), "ssh")
 	if err := os.WriteFile(ssh, []byte("#!/bin/sh\nexec sleep 60\n"), 0o755); err != nil {
@@ -31,7 +37,7 @@ func tunnelServer(t *testing.T) *Server {
 
 	router := proxy.NewRouter()
 	reg := registry.New(registry.Config{
-		DB: db, Router: router, Tunnels: tunnels.NewManagerWithSSH(ssh), GatewayHost: "8080",
+		DB: db, Router: router, Tunnels: tunnels.NewManagerWithSSH(ssh), Secrets: store, GatewayHost: "8080",
 	})
 	t.Cleanup(reg.StopAllTunnels)
 	return NewServer(Config{Registry: reg, Router: router, Version: "test"})
@@ -131,4 +137,103 @@ func TestAPITunnelsWithoutSSHAreNotImplemented(t *testing.T) {
 		decode(t, rec)["count"] != float64(0) {
 		t.Errorf("listing must still work and be empty: %d %s", rec.Code, rec.Body)
 	}
+}
+
+const withPassword = `{"alias":"db","ssh_host":"bastion.example","remote_port":5432,"local_port":39556,` +
+	`"password":"hunter2-do-not-leak"}`
+
+// The password is write-only: stored in the keyring, flagged in responses, never echoed.
+func TestAPITunnelPasswordIsWriteOnly(t *testing.T) {
+	store := secrets.NewMemory()
+	srv := tunnelServerWithSecrets(t, store)
+
+	created := do(t, srv, http.MethodPost, "/v1/tunnels", withPassword)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	body := decode(t, created)
+	if body["config"].(map[string]any)["has_password"] != true {
+		t.Errorf("has_password should be true: %v", body)
+	}
+	if store.Len() != 1 {
+		t.Errorf("keyring holds %d secrets, want 1", store.Len())
+	}
+
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"create": created,
+		"list":   do(t, srv, http.MethodGet, "/v1/tunnels", ""),
+	} {
+		if strings.Contains(rec.Body.String(), "hunter2") || strings.Contains(rec.Body.String(), `"password"`) {
+			t.Errorf("%s response exposes the password: %s", name, rec.Body)
+		}
+	}
+}
+
+func TestAPISetAndClearTunnelPassword(t *testing.T) {
+	store := secrets.NewMemory()
+	srv := tunnelServerWithSecrets(t, store)
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels", newTunnel); rec.Code != http.StatusCreated {
+		t.Fatal(rec.Body.String())
+	}
+
+	rec := do(t, srv, http.MethodPut, "/v1/tunnels/db/password", `{"password":"s3cret"}`)
+	if rec.Code != http.StatusOK || decode(t, rec)["config"].(map[string]any)["has_password"] != true {
+		t.Fatalf("set: %d %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "s3cret") {
+		t.Error("set response exposes the password")
+	}
+	if store.Len() != 1 {
+		t.Errorf("keyring holds %d secrets after set", store.Len())
+	}
+
+	rec = do(t, srv, http.MethodDelete, "/v1/tunnels/db/password", "")
+	if rec.Code != http.StatusOK || decode(t, rec)["config"].(map[string]any)["has_password"] != false {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body)
+	}
+	if store.Len() != 0 {
+		t.Errorf("keyring still holds %d secrets after clear", store.Len())
+	}
+}
+
+func TestAPITunnelPasswordErrorStatuses(t *testing.T) {
+	srv := tunnelServerWithSecrets(t, secrets.NewMemory())
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels", newTunnel); rec.Code != http.StatusCreated {
+		t.Fatal(rec.Body.String())
+	}
+	cases := []struct {
+		name, method, path, body string
+		want                     int
+	}{
+		{"empty password", http.MethodPut, "/v1/tunnels/db/password", `{"password":""}`, http.StatusBadRequest},
+		{"line break", http.MethodPut, "/v1/tunnels/db/password", `{"password":"a\nb"}`, http.StatusBadRequest},
+		{"bad json", http.MethodPut, "/v1/tunnels/db/password", `{nope`, http.StatusBadRequest},
+		{"unknown set", http.MethodPut, "/v1/tunnels/ghost/password", `{"password":"x"}`, http.StatusNotFound},
+		{"unknown clear", http.MethodDelete, "/v1/tunnels/ghost/password", "", http.StatusNotFound},
+	}
+	for _, c := range cases {
+		if rec := do(t, srv, c.method, c.path, c.body); rec.Code != c.want {
+			t.Errorf("%s: status %d, want %d (%s)", c.name, rec.Code, c.want, rec.Body)
+		}
+	}
+}
+
+// No keyring means no passwords: say so and save nothing, rather than silently dropping the password.
+func TestAPIPasswordWithoutKeyringIsNotImplemented(t *testing.T) {
+	for name, store := range map[string]secrets.Store{"no store": nil, "broken keyring": brokenStore()} {
+		srv := tunnelServerWithSecrets(t, store)
+		rec := do(t, srv, http.MethodPost, "/v1/tunnels", withPassword)
+		if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), "keyring") {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+		if list := decode(t, do(t, srv, http.MethodGet, "/v1/tunnels", "")); list["count"] != float64(0) {
+			t.Errorf("%s: a tunnel was saved although its password could not be: %v", name, list)
+		}
+	}
+}
+
+func brokenStore() secrets.Store {
+	m := secrets.NewMemory()
+	m.Err = secrets.ErrUnavailable
+	return m
 }
