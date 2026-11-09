@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
@@ -153,8 +155,9 @@ func TestMCPNotificationsGetNoResponse(t *testing.T) {
 			t.Errorf("%s: expected no response, got %+v", method, resp)
 		}
 	}
-	if resp := srv.HandleRequest(context.Background(), JSONRPCRequest{JSONRPC: "2.0", ID: 7, Method: "nope"}); resp == nil ||
-		resp.Error == nil || resp.Error.Code != -32601 {
+	unknown := JSONRPCRequest{JSONRPC: "2.0", ID: 7, Method: "nope"}
+	if resp := srv.HandleRequest(context.Background(), unknown); resp == nil || resp.Error == nil ||
+		resp.Error.Code != -32601 {
 		t.Errorf("unknown request method should return -32601, got %+v", resp)
 	}
 }
@@ -168,5 +171,105 @@ func TestMCPReportsConfiguredVersion(t *testing.T) {
 	data, _ := json.Marshal(resp.Result)
 	if !strings.Contains(string(data), `"version":"9.9.9"`) {
 		t.Errorf("version missing from initialize result: %s", data)
+	}
+}
+
+func callTool(t *testing.T, srv *Server, name, args string) (string, bool) {
+	t.Helper()
+	params := fmt.Sprintf(`{"name": %q, "arguments": %s}`, name, args)
+	resp := srv.HandleRequest(context.Background(), JSONRPCRequest{
+		JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: json.RawMessage(params),
+	})
+	if resp.Error != nil {
+		t.Fatalf("%s: protocol error %+v", name, resp.Error)
+	}
+	var res *ToolResult
+	switch v := resp.Result.(type) {
+	case *ToolResult:
+		res = v
+	case ToolResult:
+		res = &v
+	default:
+		t.Fatalf("%s: unexpected result type %T", name, resp.Result)
+	}
+	return res.Content[0].Text, res.IsError
+}
+
+// Every tool that targets a service must advertise id_or_alias and accept the legacy "id" spelling.
+func TestMCPServiceToolsShareArgumentName(t *testing.T) {
+	srv, _, cleanup := setupTestMCP(t)
+	defer cleanup()
+
+	for _, tool := range srv.listTools() {
+		schema, _ := json.Marshal(tool.InputSchema)
+		switch tool.Name {
+		case "list_services":
+			continue
+		}
+		if !strings.Contains(string(schema), `"id_or_alias"`) || strings.Contains(string(schema), `"id":`) {
+			t.Errorf("%s schema should use id_or_alias: %s", tool.Name, schema)
+		}
+	}
+
+	for _, args := range []string{`{}`, `{"id_or_alias": "  "}`} {
+		text, isErr := callTool(t, srv, "stop_service", args)
+		if !isErr || !strings.Contains(text, "id_or_alias is required") {
+			t.Errorf("stop_service %s should demand id_or_alias, got %q (err=%v)", args, text, isErr)
+		}
+	}
+}
+
+func TestMCPControlToolsDriveTheSupervisor(t *testing.T) {
+	srv, reg, cleanup := setupTestMCP(t)
+	defer cleanup()
+	defer reg.StopAll(2 * time.Second)
+
+	ctx := context.Background()
+	if _, err := reg.RegisterService(ctx, storage.Service{
+		ID: "svc-sleep", Name: "Sleeper", Alias: "sleeper", Command: "sleep 60", Cwd: t.TempDir(),
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	if text, isErr := callTool(t, srv, "start_service", `{"id_or_alias": "sleeper"}`); isErr {
+		t.Fatalf("start_service: %s", text)
+	}
+	logs, isErr := callTool(t, srv, "get_service_logs", `{"id_or_alias": "sleeper"}`)
+	if isErr || !strings.Contains(logs, "Process started") {
+		t.Errorf("logs should show the start line, got %q (err=%v)", logs, isErr)
+	}
+
+	// Legacy "id" still works for control tools.
+	if text, isErr := callTool(t, srv, "restart_service", `{"id": "svc-sleep"}`); isErr {
+		t.Fatalf("restart_service: %s", text)
+	}
+	text, isErr := callTool(t, srv, "stop_service", `{"id_or_alias": "sleeper"}`)
+	if isErr || !strings.Contains(text, "Stopped") {
+		t.Fatalf("stop_service: %q (err=%v)", text, isErr)
+	}
+}
+
+func TestMCPSetAliasRenamesAndRoutes(t *testing.T) {
+	srv, reg, cleanup := setupTestMCP(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	svc := storage.Service{ID: "svc-a", Name: "A", Alias: "old", Port: 5001}
+	if _, err := reg.RegisterService(ctx, svc); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	text, isErr := callTool(t, srv, "set_alias", `{"id_or_alias": "old", "alias": "fresh"}`)
+	if isErr || !strings.Contains(text, "fresh.localhost") {
+		t.Fatalf("set_alias: %q (err=%v)", text, isErr)
+	}
+	if _, err := reg.GetService(ctx, "fresh"); err != nil {
+		t.Errorf("service should resolve by the new alias: %v", err)
+	}
+
+	for _, bad := range []string{`{"id_or_alias": "fresh", "alias": "Not Valid!"}`, `{"id_or_alias": "fresh"}`} {
+		if text, isErr := callTool(t, srv, "set_alias", bad); !isErr {
+			t.Errorf("set_alias %s should fail, got %q", bad, text)
+		}
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/terastal-hq/prot/internal/registry"
-	"github.com/terastal-hq/prot/internal/storage"
 )
 
 // JSONRPCRequest represents an incoming MCP request.
@@ -193,8 +192,8 @@ func (s *Server) listTools() []Tool {
 			Description: "Start a managed development service.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
-				"required":   []string{"id"},
-				"properties": map[string]interface{}{"id": map[string]string{"type": "string"}},
+				"required":   []string{"id_or_alias"},
+				"properties": map[string]interface{}{"id_or_alias": map[string]string{"type": "string"}},
 			},
 		},
 		{
@@ -202,8 +201,8 @@ func (s *Server) listTools() []Tool {
 			Description: "Stop a running managed service.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
-				"required":   []string{"id"},
-				"properties": map[string]interface{}{"id": map[string]string{"type": "string"}},
+				"required":   []string{"id_or_alias"},
+				"properties": map[string]interface{}{"id_or_alias": map[string]string{"type": "string"}},
 			},
 		},
 		{
@@ -211,23 +210,35 @@ func (s *Server) listTools() []Tool {
 			Description: "Restart a managed service.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
-				"required":   []string{"id"},
-				"properties": map[string]interface{}{"id": map[string]string{"type": "string"}},
+				"required":   []string{"id_or_alias"},
+				"properties": map[string]interface{}{"id_or_alias": map[string]string{"type": "string"}},
 			},
 		},
 		{
-			Name:        "set_alias",
-			Description: "Map or update a .localhost alias for a service.",
+			Name: "set_alias",
+			Description: "Change the .localhost alias of a registered service. The new alias routes " +
+				"immediately; the old one stops resolving.",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
-				"required": []string{"alias", "target_url"},
+				"required": []string{"id_or_alias", "alias"},
 				"properties": map[string]interface{}{
-					"alias":      map[string]string{"type": "string"},
-					"target_url": map[string]string{"type": "string"},
+					"id_or_alias": map[string]string{"type": "string"},
+					"alias":       map[string]string{"type": "string"},
 				},
 			},
 		},
 	}
+}
+
+// serviceArg reads the target service from tool arguments. "id_or_alias" is canonical; the older "id"
+// spelling is still accepted so existing agent prompts keep working.
+func serviceArg(args map[string]interface{}) (string, error) {
+	for _, key := range []string{"id_or_alias", "id"} {
+		if v, _ := args[key].(string); strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v), nil
+		}
+	}
+	return "", fmt.Errorf("id_or_alias is required")
 }
 
 func (s *Server) callTool(ctx context.Context, name string, args map[string]interface{}) (*ToolResult, error) {
@@ -241,9 +252,9 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		return &ToolResult{Content: []TextContent{{Type: "text", Text: string(data)}}}, nil
 
 	case "get_service":
-		idOrAlias, _ := args["id_or_alias"].(string)
-		if idOrAlias == "" {
-			return nil, fmt.Errorf("id_or_alias is required")
+		idOrAlias, err := serviceArg(args)
+		if err != nil {
+			return nil, err
 		}
 		svc, err := s.reg.GetService(ctx, idOrAlias)
 		if err != nil {
@@ -253,7 +264,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		return &ToolResult{Content: []TextContent{{Type: "text", Text: string(data)}}}, nil
 
 	case "get_service_url":
-		idOrAlias, _ := args["id_or_alias"].(string)
+		idOrAlias, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		svc, err := s.reg.GetService(ctx, idOrAlias)
 		if err != nil {
 			return nil, err
@@ -262,7 +276,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		return &ToolResult{Content: []TextContent{{Type: "text", Text: res}}}, nil
 
 	case "get_service_logs":
-		idOrAlias, _ := args["id_or_alias"].(string)
+		idOrAlias, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		limit := 100
 		if l, ok := args["limit"].(float64); ok && l > 0 {
 			limit = int(l)
@@ -283,7 +300,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		return &ToolResult{Content: []TextContent{{Type: "text", Text: string(data)}}}, nil
 
 	case "ensure_running":
-		idOrAlias, _ := args["id_or_alias"].(string)
+		idOrAlias, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		svc, err := s.reg.GetService(ctx, idOrAlias)
 		if err != nil {
 			return nil, err
@@ -317,7 +337,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		}, nil
 
 	case "start_service":
-		id, _ := args["id"].(string)
+		id, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		started, err := s.reg.StartService(ctx, id)
 		if err != nil {
 			return nil, err
@@ -332,7 +355,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		}, nil
 
 	case "stop_service":
-		id, _ := args["id"].(string)
+		id, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		stopped, err := s.reg.StopService(ctx, id)
 		if err != nil {
 			return nil, err
@@ -347,7 +373,10 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		}, nil
 
 	case "restart_service":
-		id, _ := args["id"].(string)
+		id, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		restarted, err := s.reg.RestartService(ctx, id)
 		if err != nil {
 			return nil, err
@@ -362,30 +391,20 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]inte
 		}, nil
 
 	case "set_alias":
+		id, err := serviceArg(args)
+		if err != nil {
+			return nil, err
+		}
 		alias, _ := args["alias"].(string)
-		targetURL, _ := args["target_url"].(string)
-		if alias == "" || targetURL == "" {
-			return nil, fmt.Errorf("alias and target_url are required")
+		if alias == "" {
+			return nil, fmt.Errorf("alias is required")
 		}
-		svc := storage.Service{
-			ID:       "alias_" + alias,
-			Name:     alias,
-			Alias:    alias,
-			Status:   "running",
-			Runtime:  "discovered",
-			AutoPort: false,
-		}
-		_, err := s.reg.RegisterService(ctx, svc)
+		svc, err := s.reg.RenameAlias(ctx, id, alias)
 		if err != nil {
 			return nil, err
 		}
 		return &ToolResult{
-			Content: []TextContent{
-				{
-					Type: "text",
-					Text: fmt.Sprintf("Alias mapped: http://%s.localhost -> %s", alias, targetURL),
-				},
-			},
+			Content: []TextContent{{Type: "text", Text: fmt.Sprintf("Alias set: %s -> %s", svc.CanonicalURL, svc.DirectURL)}},
 		}, nil
 
 	default:
