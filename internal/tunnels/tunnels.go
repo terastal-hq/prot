@@ -157,23 +157,32 @@ func newManager(sshPath string) *Manager {
 	}
 }
 
-// Register registers a tunnel configuration.
-func (m *Manager) Register(cfg TunnelConfig) (*TunnelStatus, error) {
+// normalize checks a tunnel configuration and fills in its defaults.
+func normalize(cfg TunnelConfig) (TunnelConfig, error) {
 	if cfg.ID == "" {
-		return nil, errors.New("tunnel ID is required")
+		return cfg, errors.New("tunnel ID is required")
 	}
 	if cfg.SSHHost == "" {
-		return nil, errors.New("ssh_host is required")
+		return cfg, errors.New("ssh_host is required")
 	}
 	// ssh would parse a leading "-" as an option (for example -oProxyCommand=...), not a destination.
 	if strings.HasPrefix(cfg.SSHHost, "-") || strings.HasPrefix(cfg.SSHUser, "-") {
-		return nil, errors.New("ssh_host and ssh_user must not start with '-'")
+		return cfg, errors.New("ssh_host and ssh_user must not start with '-'")
 	}
 	if cfg.RemoteHost == "" {
 		cfg.RemoteHost = "127.0.0.1"
 	}
 	if cfg.RemotePort == 0 {
-		return nil, errors.New("remote_port must be greater than 0")
+		return cfg, errors.New("remote_port must be greater than 0")
+	}
+	return cfg, nil
+}
+
+// Register registers a tunnel configuration.
+func (m *Manager) Register(cfg TunnelConfig) (*TunnelStatus, error) {
+	cfg, err := normalize(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	m.mu.Lock()
@@ -193,6 +202,40 @@ func (m *Manager) Register(cfg TunnelConfig) (*TunnelStatus, error) {
 	m.tunnels[cfg.ID] = st
 	statusCopy := st.status
 	return &statusCopy, nil
+}
+
+// Update replaces the configuration of a registered tunnel (the ID selects it). A tunnel that was connecting,
+// connected or retrying is stopped so its ssh process exits first; wasRunning says it should be started again with
+// the new settings. The configuration is validated before anything is touched.
+func (m *Manager) Update(cfg TunnelConfig) (wasRunning bool, err error) {
+	cfg, err = normalize(cfg)
+	if err != nil {
+		return false, err
+	}
+	st, err := m.lookup(cfg.ID)
+	if err != nil {
+		return false, err
+	}
+
+	m.mu.RLock()
+	wasRunning = st.desiredRun
+	m.mu.RUnlock()
+	m.stop(st)
+
+	m.mu.Lock()
+	st.cfg = cfg
+	st.status.Config = cfg
+	st.status.LastError = ""
+	m.mu.Unlock()
+	m.emit(st)
+	return wasRunning, nil
+}
+
+// config returns a copy of the tunnel's current configuration.
+func (m *Manager) config(st *supervisedTunnel) TunnelConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return st.cfg
 }
 
 func (m *Manager) lookup(id string) (*supervisedTunnel, error) {
@@ -403,7 +446,8 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 }
 
 func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
-	localPort := st.cfg.LocalPort
+	cfg := m.config(st) // a snapshot: the configuration can be edited while the loop runs
+	localPort := cfg.LocalPort
 	if localPort == 0 {
 		freePort, err := netutil.FreePort()
 		if err != nil {
@@ -412,11 +456,11 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		localPort = freePort
 	}
 
-	env, err := m.sshEnv(st.cfg)
+	env, err := m.sshEnv(cfg)
 	if err != nil {
 		return err
 	}
-	args := sshArgs(st.cfg, localPort)
+	args := sshArgs(cfg, localPort)
 	m.mu.RLock()
 	configFile := m.configFile
 	m.mu.RUnlock()

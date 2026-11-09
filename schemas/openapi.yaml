@@ -252,6 +252,36 @@ paths:
       responses:
         "204": { description: Tunnel removed }
         "404": { description: Unknown tunnel }
+    patch:
+      summary: Edit a tunnel in place
+      description: >
+        Only the fields present in the body change; an empty string clears an optional field. The id and the stored
+        password are kept (use the password endpoints for that). A tunnel that was connecting, connected or retrying
+        is reconnected with the new settings; a stopped one stays stopped. Renaming moves the .localhost route.
+        A request that changes nothing leaves a live connection alone.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                alias: { type: string }
+                ssh_host: { type: string }
+                ssh_user: { type: string }
+                remote_host: { type: string }
+                remote_port: { type: integer }
+                local_port: { type: integer }
+                identity_file: { type: string }
+                extra_args: { type: array, items: { type: string } }
+                auto_connect: { type: boolean }
+      responses:
+        "200": { description: The tunnel with its live status }
+        "400": { description: Invalid alias or field; nothing changed }
+        "404": { description: Unknown tunnel }
+        "409": { description: Alias already used by a service or another tunnel }
   /v1/tunnels/{id}/password:
     put:
       summary: Store or replace a tunnel's password

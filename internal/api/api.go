@@ -90,6 +90,7 @@ func (s *Server) routes() {
 	// Tunnels
 	s.mux.HandleFunc("GET /v1/tunnels", s.handleListTunnels)
 	s.mux.HandleFunc("POST /v1/tunnels", s.handleCreateTunnel)
+	s.mux.HandleFunc("PATCH /v1/tunnels/{id}", s.handleUpdateTunnel)
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/start", s.handleStartTunnel)
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/stop", s.handleStopTunnel)
 	s.mux.HandleFunc("DELETE /v1/tunnels/{id}", s.handleDeleteTunnel)
@@ -442,6 +443,22 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonCreated(w, view)
+}
+
+// handleUpdateTunnel edits a tunnel in place. Only the fields present in the body change; a tunnel that was
+// connected is reconnected with the new settings.
+func (s *Server) handleUpdateTunnel(w http.ResponseWriter, r *http.Request) {
+	var patch registry.TunnelPatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request json")
+		return
+	}
+	view, err := s.reg.UpdateTunnel(r.Context(), r.PathValue("id"), patch)
+	if err != nil {
+		writeTunnelError(w, err)
+		return
+	}
+	jsonOK(w, view)
 }
 
 func (s *Server) handleStartTunnel(w http.ResponseWriter, r *http.Request) {

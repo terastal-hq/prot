@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"strings"
 	"time"
 
@@ -210,6 +211,146 @@ func (r *Registry) RegisterTunnelWithPassword(
 	view := r.tunnelView(*st)
 	r.Broadcast(Event{Type: "tunnel.registered", Timestamp: time.Now().UTC(), Data: view})
 	return &view, nil
+}
+
+// TunnelPatch is a partial edit of a tunnel: a nil field is left alone, a non-nil one replaces the current value
+// (so an empty string clears an optional field). The id and the stored password cannot be edited here.
+type TunnelPatch struct {
+	Alias        *string   `json:"alias,omitempty"`
+	SSHHost      *string   `json:"ssh_host,omitempty"`
+	SSHUser      *string   `json:"ssh_user,omitempty"`
+	RemoteHost   *string   `json:"remote_host,omitempty"`
+	RemotePort   *uint32   `json:"remote_port,omitempty"`
+	LocalPort    *uint32   `json:"local_port,omitempty"`
+	IdentityFile *string   `json:"identity_file,omitempty"`
+	ExtraArgs    *[]string `json:"extra_args,omitempty"`
+	AutoConnect  *bool     `json:"auto_connect,omitempty"`
+}
+
+func (p TunnelPatch) apply(cfg tunnels.TunnelConfig) tunnels.TunnelConfig {
+	if p.Alias != nil {
+		cfg.Alias = strings.ToLower(strings.TrimSpace(*p.Alias))
+	}
+	if p.SSHHost != nil {
+		cfg.SSHHost = strings.TrimSpace(*p.SSHHost)
+	}
+	if p.SSHUser != nil {
+		cfg.SSHUser = strings.TrimSpace(*p.SSHUser)
+	}
+	if p.RemoteHost != nil {
+		cfg.RemoteHost = strings.TrimSpace(*p.RemoteHost)
+	}
+	if p.RemotePort != nil {
+		cfg.RemotePort = *p.RemotePort
+	}
+	if p.LocalPort != nil {
+		cfg.LocalPort = *p.LocalPort
+	}
+	if p.IdentityFile != nil {
+		cfg.IdentityFile = strings.TrimSpace(*p.IdentityFile)
+	}
+	if p.ExtraArgs != nil {
+		cfg.ExtraArgs = append([]string{}, *p.ExtraArgs...)
+	}
+	if p.AutoConnect != nil {
+		cfg.AutoConnect = *p.AutoConnect
+	}
+	return cfg
+}
+
+// UpdateTunnel edits a saved tunnel in place. The id, the stored password and the .localhost alias's ownership are
+// kept; the route follows a renamed alias or a changed local port. A tunnel that was connecting, connected or
+// retrying is reconnected with the new settings. An edit that changes nothing leaves a live connection alone.
+func (r *Registry) UpdateTunnel(ctx context.Context, idOrAlias string, patch TunnelPatch) (*TunnelView, error) {
+	id, err := r.resolveTunnelID(idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+
+	r.tunnelRegMu.Lock()
+	defer r.tunnelRegMu.Unlock()
+
+	current, ok := r.tunnels.GetStatus(id)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", tunnels.ErrNotFound, id)
+	}
+	old := current.Config
+	updated := patch.apply(old)
+	if updated.RemoteHost == "" {
+		updated.RemoteHost = "127.0.0.1"
+	}
+	if updated.ExtraArgs == nil {
+		updated.ExtraArgs = []string{}
+	}
+	if old.ExtraArgs == nil {
+		old.ExtraArgs = []string{}
+	}
+
+	if reflect.DeepEqual(old, updated) {
+		view := r.tunnelView(*current)
+		return &view, nil
+	}
+
+	if updated.Alias != old.Alias {
+		if err := r.checkNewTunnelAlias(ctx, updated.Alias, id); err != nil {
+			return nil, err
+		}
+	}
+
+	wasRunning, err := r.tunnels.Update(updated)
+	if err != nil {
+		return nil, invalidField("%s", err)
+	}
+	if err := r.db.SaveTunnel(ctx, tunnelToStorage(updated)); err != nil {
+		// Put the previous settings back so the daemon and the database agree.
+		if _, rbErr := r.tunnels.Update(old); rbErr != nil {
+			log.Printf("registry: restoring tunnel %q after a failed save: %v", old.Alias, rbErr)
+		}
+		return nil, fmt.Errorf("saving tunnel: %w", err)
+	}
+
+	if updated.Alias != old.Alias {
+		r.router.RemoveRoute(old.Alias)
+	}
+	if updated.LocalPort > 0 {
+		if err := r.router.SetRoute(updated.Alias, netutil.LoopbackURL(updated.LocalPort), false); err != nil {
+			log.Printf("registry: routing %q: %v", updated.Alias, err)
+		}
+	}
+	_ = r.db.LogEvent(ctx, "tunnel.updated", id, fmt.Sprintf(`{"alias": %q}`, updated.Alias))
+
+	if wasRunning {
+		if _, err := r.tunnels.Start(ctx, id); err != nil {
+			log.Printf("registry: reconnecting tunnel %q after an edit: %v", updated.Alias, err)
+		}
+	}
+	st, ok := r.tunnels.GetStatus(id)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", tunnels.ErrNotFound, id)
+	}
+	view := r.tunnelView(*st)
+	r.Broadcast(Event{Type: "tunnel.updated", Timestamp: time.Now().UTC(), Data: view})
+	return &view, nil
+}
+
+// checkNewTunnelAlias validates an alias a tunnel is being renamed to.
+func (r *Registry) checkNewTunnelAlias(ctx context.Context, alias, tunnelID string) error {
+	if !aliasPattern.MatchString(alias) {
+		return ErrInvalidAlias
+	}
+	if r.aliasInUseByTunnel(alias, tunnelID) {
+		return ErrAliasTaken
+	}
+	services, err := r.db.ListServices(ctx)
+	if err != nil {
+		return err
+	}
+	for _, svc := range services {
+		if svc.Alias == alias {
+			return ErrAliasTaken
+		}
+	}
+	return nil
 }
 
 // ListTunnels returns every tunnel with its live status.

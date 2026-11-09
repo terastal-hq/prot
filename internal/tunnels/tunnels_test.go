@@ -438,3 +438,34 @@ func TestConfigFileIsPassedToSSH(t *testing.T) {
 	}
 	t.Fatal("fake ssh was never run")
 }
+
+func TestUpdateReplacesConfigAfterValidating(t *testing.T) {
+	m := NewManagerWithSSH("/bin/true")
+	base := TunnelConfig{ID: "t1", Alias: "a", SSHHost: "h", RemotePort: 80}
+	if _, err := m.Register(base); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := base
+	bad.SSHHost = "-oProxyCommand=x"
+	if _, err := m.Update(bad); err == nil {
+		t.Error("an option-like host must be refused")
+	}
+	if st, _ := m.GetStatus("t1"); st.Config.SSHHost != "h" {
+		t.Errorf("a refused update changed the config: %+v", st.Config)
+	}
+
+	if _, err := m.Update(TunnelConfig{ID: "nope", SSHHost: "h", RemotePort: 1}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown id: %v", err)
+	}
+
+	next := base
+	next.RemotePort = 8080
+	wasRunning, err := m.Update(next)
+	if err != nil || wasRunning {
+		t.Fatalf("Update: wasRunning=%v err=%v", wasRunning, err)
+	}
+	if st, _ := m.GetStatus("t1"); st.Config.RemotePort != 8080 || st.Config.RemoteHost != "127.0.0.1" {
+		t.Errorf("config after update: %+v", st.Config)
+	}
+}

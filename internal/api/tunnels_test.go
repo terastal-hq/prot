@@ -237,3 +237,69 @@ func brokenStore() secrets.Store {
 	m.Err = secrets.ErrUnavailable
 	return m
 }
+
+func TestAPIEditTunnel(t *testing.T) {
+	srv := tunnelServer(t)
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels", newTunnel); rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	const other = `{"alias":"other","ssh_host":"h","remote_port":1}`
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels", other); rec.Code != http.StatusCreated {
+		t.Fatalf("create other: %d %s", rec.Code, rec.Body)
+	}
+
+	// Only the fields in the body change, and the tunnel is found by alias.
+	rec := do(t, srv, http.MethodPatch, "/v1/tunnels/db", `{"alias":"warehouse","remote_port":6000,"ssh_user":"deploy"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body)
+	}
+	got := decode(t, rec)
+	cfg := got["config"].(map[string]any)
+	if cfg["alias"] != "warehouse" || cfg["remote_port"] != float64(6000) || cfg["ssh_user"] != "deploy" ||
+		cfg["ssh_host"] != "bastion.example" || cfg["local_port"] != float64(39555) {
+		t.Errorf("config after patch: %v", cfg)
+	}
+	if got["canonical_url"] != "http://warehouse.localhost:8080" {
+		t.Errorf("canonical_url = %v", got["canonical_url"])
+	}
+
+	// The old alias is gone, the new one works.
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels/db/start", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("old alias: %d, want 404", rec.Code)
+	}
+	if rec := do(t, srv, http.MethodPost, "/v1/tunnels/warehouse/stop", ""); rec.Code != http.StatusOK {
+		t.Errorf("new alias: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPIEditTunnelErrorStatuses(t *testing.T) {
+	srv := tunnelServer(t)
+	do(t, srv, http.MethodPost, "/v1/tunnels", newTunnel)
+	do(t, srv, http.MethodPost, "/v1/tunnels", `{"alias":"other","ssh_host":"h","remote_port":1}`)
+
+	cases := []struct {
+		name, path, body string
+		want             int
+	}{
+		{"unknown tunnel", "/v1/tunnels/nope", `{}`, http.StatusNotFound},
+		{"alias taken", "/v1/tunnels/db", `{"alias":"other"}`, http.StatusConflict},
+		{"invalid alias", "/v1/tunnels/db", `{"alias":"Not Valid!"}`, http.StatusBadRequest},
+		{"option-like host", "/v1/tunnels/db", `{"ssh_host":"-oProxyCommand=x"}`, http.StatusBadRequest},
+		{"no remote port", "/v1/tunnels/db", `{"remote_port":0}`, http.StatusBadRequest},
+		{"not json", "/v1/tunnels/db", `nope`, http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		if rec := do(t, srv, http.MethodPatch, c.path, c.body); rec.Code != c.want {
+			t.Errorf("%s: %d %s, want %d", c.name, rec.Code, rec.Body, c.want)
+		}
+	}
+
+	// None of the refused edits changed anything.
+	list := decode(t, do(t, srv, http.MethodGet, "/v1/tunnels", ""))
+	for _, item := range list["tunnels"].([]any) {
+		cfg := item.(map[string]any)["config"].(map[string]any)
+		if cfg["alias"] == "db" && (cfg["ssh_host"] != "bastion.example" || cfg["remote_port"] != float64(5432)) {
+			t.Errorf("a refused edit changed the tunnel: %v", cfg)
+		}
+	}
+}
