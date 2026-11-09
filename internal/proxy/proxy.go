@@ -54,26 +54,22 @@ func (r *Router) SetRoute(alias, targetURL string, lanExposed bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Routes are immutable once published: request handlers hold the *Route that Match returned while SetRoute
+	// may run concurrently, so an update swaps in a new value instead of editing the shared one.
 	now := time.Now().UTC()
-	existing, ok := r.routes[alias]
-	if ok {
-		existing.TargetURL = targetURL
-		existing.parsedURL = u
-		existing.LANExposed = lanExposed
-		existing.UpdatedAt = now
-		return nil
+	createdAt := now
+	if existing, ok := r.routes[alias]; ok {
+		createdAt = existing.CreatedAt
 	}
-
-	route := &Route{
+	r.routes[alias] = &Route{
 		Alias:      alias,
-		Host:       fmt.Sprintf("%s.localhost", alias),
+		Host:       alias + ".localhost",
 		TargetURL:  targetURL,
 		LANExposed: lanExposed,
-		CreatedAt:  now,
+		CreatedAt:  createdAt,
 		UpdatedAt:  now,
 		parsedURL:  u,
 	}
-	r.routes[alias] = route
 	return nil
 }
 
@@ -94,9 +90,8 @@ func (r *Router) GetRoute(alias string) (*Route, bool) {
 	if !ok {
 		return nil, false
 	}
-	// Return shallow copy
-	copy := *rt
-	return &copy, true
+	routeCopy := *rt
+	return &routeCopy, true
 }
 
 // ListRoutes returns all current routes.
@@ -150,7 +145,8 @@ type Server struct {
 
 // ServerOptions configures the proxy server.
 type ServerOptions struct {
-	ListenAddr   string // e.g. "127.0.0.1:8080" or ":8080"
+	ListenAddr string // e.g. "127.0.0.1:8080" or ":8080"
+	// ReadTimeout and WriteTimeout default to none: a write timeout would cut off SSE streams and WebSockets.
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
@@ -166,14 +162,13 @@ func NewServer(router *Router, opts ServerOptions) *Server {
 		listenAddr: opts.ListenAddr,
 	}
 
-	// ReverseProxy director and error handling
 	rp := &httputil.ReverseProxy{
-		Director: s.director,
+		Rewrite: s.rewrite,
 		// FlushInterval = -1 enables immediate streaming / SSE / HMR
 		FlushInterval: -1,
 		ErrorHandler:  s.errorHandler,
+		// Upstreams are always loopback ports, so no HTTP(S)_PROXY handling.
 		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
 				Timeout:   5 * time.Second,
 				KeepAlive: 30 * time.Second,
@@ -188,8 +183,11 @@ func NewServer(router *Router, opts ServerOptions) *Server {
 
 	s.proxy = rp
 	s.httpServer = &http.Server{
-		Addr:    opts.ListenAddr,
-		Handler: s,
+		Addr:              opts.ListenAddr,
+		Handler:           s,
+		ReadHeaderTimeout: 15 * time.Second, // slow-header clients must not hold connections forever
+		ReadTimeout:       opts.ReadTimeout,
+		WriteTimeout:      opts.WriteTimeout,
 	}
 
 	return s
@@ -204,50 +202,14 @@ func isLoopback(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// ServeHTTP handles requests, routes them to upstreams or renders diagnostics.
+type routeContextKey struct{}
+
+// ServeHTTP resolves the route once, enforces the LAN policy and hands the request to the reverse proxy. Every
+// path belongs to the upstream app: the management API lives on its own authenticated listener, never here.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// The management API (/v1/*) and MCP (/mcp) are served by a separate loopback listener with token
-	// authentication, never by this gateway, so every path here belongs to the upstream app. Reserving
-	// prefixes like /v1/ would break ordinary development APIs.
 	route, ok := s.router.Match(r.Host)
 	if !ok {
-		// Friendly prot route not found page
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head><title>prot — Route Not Found</title><style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117;
-  color: #c9d1d9;
-  padding: 40px;
-}
-h1 { color: #58a6ff; }
-.card {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 600px;
-  margin-top: 20px;
-}
-code {
-  background: #21262d;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: monospace;
-  color: #f0883e;
-}
-</style></head>
-<body>
-<h1>prot &mdash; Route Not Found</h1>
-<div class="card">
-  <p>No upstream service is configured for host: <code>%s</code></p>
-  <p>To register an alias with prot, run:</p>
-  <pre><code>prot alias &lt;service&gt; &lt;alias&gt;</code></pre>
-</div>
-</body></html>`, r.Host)
+		renderPage(w, http.StatusNotFound, notFoundPage, pageData{Host: r.Host})
 		return
 	}
 
@@ -258,111 +220,39 @@ code {
 		return
 	}
 
-	// Pass to reverse proxy
-	s.proxy.ServeHTTP(w, r)
+	ctx := context.WithValue(r.Context(), routeContextKey{}, route)
+	s.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
-func (s *Server) director(req *http.Request) {
-	route, ok := s.router.Match(req.Host)
+// rewrite points the outbound request at the matched route's upstream.
+func (s *Server) rewrite(pr *httputil.ProxyRequest) {
+	route, ok := pr.In.Context().Value(routeContextKey{}).(*Route)
 	if !ok {
-		return
+		return // unreachable: ServeHTTP always attaches the route
 	}
 
-	target := route.parsedURL
-	targetQuery := target.RawQuery
+	pr.SetURL(route.parsedURL) // joins paths and queries and sets the upstream Host
 
-	req.URL.Scheme = target.Scheme
-	req.URL.Host = target.Host
-	req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-
-	if targetQuery == "" || req.URL.RawQuery == "" {
-		req.URL.RawQuery = targetQuery + req.URL.RawQuery
-	} else {
-		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+	// Keep the client chain (X-Forwarded-For) a trusted upstream proxy sent us and append this hop.
+	if prior := pr.In.Header.Values("X-Forwarded-For"); len(prior) > 0 {
+		pr.Out.Header["X-Forwarded-For"] = prior
 	}
+	pr.SetXForwarded()
 
-	// Preserve incoming X-Forwarded headers while adding standard proxy headers
-	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		prior := req.Header.Get("X-Forwarded-For")
-		if prior != "" {
-			req.Header.Set("X-Forwarded-For", prior+", "+clientIP)
-		} else {
-			req.Header.Set("X-Forwarded-For", clientIP)
+	// A proxy in front of prot (for example a tunnel) knows the real scheme and host; trust it.
+	for _, name := range []string{"X-Forwarded-Proto", "X-Forwarded-Host"} {
+		if v := pr.In.Header.Get(name); v != "" {
+			pr.Out.Header.Set(name, v)
 		}
 	}
-
-	if req.Header.Get("X-Forwarded-Proto") == "" {
-		if req.TLS != nil {
-			req.Header.Set("X-Forwarded-Proto", "https")
-		} else {
-			req.Header.Set("X-Forwarded-Proto", "http")
-		}
-	}
-
-	if req.Header.Get("X-Forwarded-Host") == "" {
-		req.Header.Set("X-Forwarded-Host", req.Host)
-	}
-
-	// Set upstream Host header
-	req.Host = target.Host
 }
 
 func (s *Server) errorHandler(w http.ResponseWriter, r *http.Request, err error) {
-	route, _ := s.router.Match(r.Host)
-	targetDesc := "upstream"
-	if route != nil {
-		targetDesc = route.TargetURL
+	target := "upstream"
+	if route, ok := r.Context().Value(routeContextKey{}).(*Route); ok {
+		target = route.TargetURL
 	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusBadGateway)
-	_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head><title>prot — 502 Bad Gateway</title><style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117;
-  color: #c9d1d9;
-  padding: 40px;
-}
-h1 { color: #f85149; }
-.card {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 600px;
-  margin-top: 20px;
-}
-code {
-  background: #21262d;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: monospace;
-  color: #79c0ff;
-}
-</style></head>
-<body>
-<h1>prot &mdash; 502 Bad Gateway</h1>
-<div class="card">
-  <p>The upstream server at <code>%s</code> is not responding.</p>
-  <p>Error: <code>%v</code></p>
-  <p>Check if your development service is running or inspect logs:</p>
-  <pre><code>prot logs &lt;service&gt;</code></pre>
-</div>
-</body></html>`, targetDesc, err)
-}
-
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
+	renderPage(w, http.StatusBadGateway, badGatewayPage, pageData{Target: target, Error: err.Error()})
 }
 
 // Start begins listening.
