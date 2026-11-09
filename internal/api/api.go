@@ -20,7 +20,6 @@ import (
 type Server struct {
 	reg         *registry.Registry
 	router      *proxy.Router
-	tunnelsMgr  *tunnels.Manager
 	version     string
 	gatewayAddr string
 	adminAddr   string
@@ -31,7 +30,6 @@ type Server struct {
 type Config struct {
 	Registry    *registry.Registry
 	Router      *proxy.Router
-	Tunnels     *tunnels.Manager
 	Version     string
 	GatewayAddr string
 	AdminAddr   string
@@ -42,7 +40,6 @@ func NewServer(cfg Config) *Server {
 	s := &Server{
 		reg:         cfg.Registry,
 		router:      cfg.Router,
-		tunnelsMgr:  cfg.Tunnels,
 		version:     cfg.Version,
 		gatewayAddr: cfg.GatewayAddr,
 		adminAddr:   cfg.AdminAddr,
@@ -87,6 +84,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/tunnels", s.handleCreateTunnel)
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/start", s.handleStartTunnel)
 	s.mux.HandleFunc("POST /v1/tunnels/{id}/stop", s.handleStopTunnel)
+	s.mux.HandleFunc("DELETE /v1/tunnels/{id}", s.handleDeleteTunnel)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -386,11 +384,24 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
-	list := []tunnels.TunnelStatus{}
-	if s.tunnelsMgr != nil {
-		list = s.tunnelsMgr.List()
+// writeTunnelError maps a tunnel operation's error to an HTTP status.
+func writeTunnelError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, tunnels.ErrNotFound):
+		jsonErr(w, http.StatusNotFound, "tunnel not found")
+	case errors.Is(err, registry.ErrTunnelsUnavailable):
+		jsonErr(w, http.StatusNotImplemented, err.Error())
+	case errors.Is(err, registry.ErrInvalidAlias), errors.Is(err, registry.ErrInvalidField):
+		jsonErr(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, registry.ErrAliasTaken):
+		jsonErr(w, http.StatusConflict, err.Error())
+	default:
+		jsonErr(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
+	list := s.reg.ListTunnels()
 	jsonOK(w, map[string]any{
 		"tunnels": list,
 		"count":   len(list),
@@ -398,54 +409,41 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
-	if s.tunnelsMgr == nil {
-		jsonErr(w, http.StatusNotImplemented, "ssh tunnels not supported in this environment")
-		return
-	}
-
 	var cfg tunnels.TunnelConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request json")
 		return
 	}
 
-	st, err := s.tunnelsMgr.Register(cfg)
+	view, err := s.reg.RegisterTunnel(r.Context(), cfg)
 	if err != nil {
-		jsonErr(w, http.StatusBadRequest, err.Error())
+		writeTunnelError(w, err)
 		return
 	}
-
-	if cfg.AutoConnect {
-		_, _ = s.tunnelsMgr.Start(r.Context(), cfg.ID)
-	}
-
-	jsonCreated(w, st)
+	jsonCreated(w, view)
 }
 
 func (s *Server) handleStartTunnel(w http.ResponseWriter, r *http.Request) {
-	if s.tunnelsMgr == nil {
-		jsonErr(w, http.StatusNotImplemented, "ssh tunnels not supported in this environment")
-		return
-	}
-
-	id := r.PathValue("id")
-	st, err := s.tunnelsMgr.Start(r.Context(), id)
+	view, err := s.reg.StartTunnel(r.Context(), r.PathValue("id"))
 	if err != nil {
-		jsonErr(w, http.StatusInternalServerError, err.Error())
+		writeTunnelError(w, err)
 		return
 	}
-	jsonOK(w, st)
+	jsonOK(w, view)
 }
 
 func (s *Server) handleStopTunnel(w http.ResponseWriter, r *http.Request) {
-	if s.tunnelsMgr == nil {
-		jsonErr(w, http.StatusNotImplemented, "ssh tunnels not supported in this environment")
+	view, err := s.reg.StopTunnel(r.PathValue("id"))
+	if err != nil {
+		writeTunnelError(w, err)
 		return
 	}
+	jsonOK(w, view)
+}
 
-	id := r.PathValue("id")
-	if err := s.tunnelsMgr.Stop(id); err != nil {
-		jsonErr(w, http.StatusInternalServerError, err.Error())
+func (s *Server) handleDeleteTunnel(w http.ResponseWriter, r *http.Request) {
+	if err := s.reg.DeleteTunnel(r.Context(), r.PathValue("id")); err != nil {
+		writeTunnelError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

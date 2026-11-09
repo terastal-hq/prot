@@ -128,7 +128,6 @@ func New(cfg Config) (*Daemon, error) {
 	apiSrv := api.NewServer(api.Config{
 		Registry:    reg,
 		Router:      router,
-		Tunnels:     tunMgr,
 		Version:     Version,
 		GatewayAddr: cfg.GatewayAddr,
 		AdminAddr:   cfg.AdminAddr,

@@ -206,25 +206,60 @@ paths:
   /v1/tunnels:
     get:
       summary: List SSH tunnels
+      description: Saved tunnels with their live status. Each carries the .localhost address it is reachable at.
       responses:
         "200": { description: List of tunnels }
     post:
       summary: Register an SSH tunnel
+      description: >
+        Saves the tunnel and gives its alias a .localhost route. With auto_connect it connects immediately and again
+        whenever protd starts. ssh runs non-interactively (BatchMode), so authentication must work without a prompt:
+        a key in ssh-agent or an unencrypted key.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [id, alias, ssh_host, remote_port]
+              required: [alias, ssh_host, remote_port]
               properties:
-                id: { type: string }
-                alias: { type: string }
+                id: { type: string, description: "Generated when omitted" }
+                alias: { type: string, description: "Becomes <alias>.localhost; unique across services and tunnels" }
                 ssh_host: { type: string }
                 ssh_user: { type: string }
                 remote_host: { type: string, default: "127.0.0.1" }
                 remote_port: { type: integer }
-                local_port: { type: integer, default: 0 }
+                local_port: { type: integer, default: 0, description: "0 picks a free port on every connection" }
+                identity_file: { type: string }
+                extra_args: { type: array, items: { type: string }, description: "Extra ssh arguments, for example -p 2222" }
                 auto_connect: { type: boolean }
       responses:
         "201": { description: Tunnel registered }
+        "400": { description: Invalid alias or field }
+        "409": { description: Alias already used by a service or tunnel }
+        "501": { description: ssh is not installed }
+  /v1/tunnels/{id}:
+    delete:
+      summary: Disconnect and delete a tunnel
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      responses:
+        "204": { description: Tunnel removed }
+        "404": { description: Unknown tunnel }
+  /v1/tunnels/{id}/start:
+    post:
+      summary: Connect a tunnel
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      responses:
+        "200": { description: Tunnel status }
+        "404": { description: Unknown tunnel }
+  /v1/tunnels/{id}/stop:
+    post:
+      summary: Disconnect a tunnel
+      description: Returns once the ssh process has exited.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "Tunnel id or alias" }
+      responses:
+        "200": { description: Tunnel status }
+        "404": { description: Unknown tunnel }
