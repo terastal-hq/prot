@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -223,8 +224,10 @@ func (d *Daemon) recoverState(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down all daemon components.
+// Stop gracefully shuts down all daemon components. It always tries every step and returns the failures joined.
 func (d *Daemon) Stop(ctx context.Context) error {
+	var errs []error
+
 	if d.discCancel != nil {
 		d.discCancel()
 	}
@@ -238,22 +241,28 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	}
 
 	if d.adminSrv != nil {
-		_ = d.adminSrv.Shutdown(ctx)
+		if err := d.adminSrv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("stopping admin API: %w", err))
+		}
 	}
-
 	if d.proxySrv != nil {
-		_ = d.proxySrv.Close(ctx)
+		if err := d.proxySrv.Close(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("stopping proxy: %w", err))
+		}
 	}
-
 	if d.db != nil {
-		_ = d.db.Close()
+		if err := d.db.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing database: %w", err))
+		}
 	}
 
-	// Remove state file
+	// Remove the state file so clients do not think a dead daemon is running.
 	statePath := filepath.Join(d.cfg.DataDir, "daemon.json")
-	_ = os.Remove(statePath)
+	if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		errs = append(errs, fmt.Errorf("removing state file: %w", err))
+	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // Router returns the dynamic proxy router.
