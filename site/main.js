@@ -196,7 +196,29 @@
       intro = 1;
       plane.style.setProperty("--e", "1");
     } else {
+      // Tilt, where the browser allows it without asking (Android Chrome). iOS Safari sends nothing until the user grants
+      // permission, which is not requested here, so on an iPhone this simply never fires. The phone's angle, relative to how it is held when the page opens, turns the stack. The reference drifts
+      // slowly toward the current angle, so the view settles back to rest if you change how you hold the phone.
+      let tilting = false;
+      if (matchMedia("(pointer: coarse)").matches && "DeviceOrientationEvent" in window) {
+        let base = null;
+        const RANGE = 18; // degrees of phone tilt for the full turn of the stack
+        addEventListener("deviceorientation", (ev) => {
+          if (ev.gamma == null || ev.beta == null || innerWidth > innerHeight) return;
+          tilting = true;
+          if (!base) base = { g: ev.gamma, b: ev.beta };
+          base.g += (ev.gamma - base.g) * 0.004;
+          base.b += (ev.beta - base.b) * 0.004;
+          const x = clamp((ev.gamma - base.g) / RANGE, -1, 1);
+          const y = clamp((ev.beta - base.b) / RANGE, -1, 1);
+          want.ry = REST.ry + x * 12;
+          want.rx = REST.rx - y * 9;
+          want.rz = REST.rz + x * 2;
+          request();
+        }, { passive: true });
+      }
       addEventListener("pointermove", (ev) => {
+        if (tilting && ev.pointerType !== "mouse") return; // a finger on the screen should not fight the sensors
         const x = ev.clientX / innerWidth - 0.5;
         const y = ev.clientY / innerHeight - 0.5;
         want.ry = REST.ry + x * 12;
