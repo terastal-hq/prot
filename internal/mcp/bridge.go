@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,7 +79,8 @@ func (b *Bridge) relay(ctx context.Context, line []byte, out io.Writer) error {
 			return nil // nothing can be reported for a notification
 		}
 		code := codeDaemonUnavailable
-		if _, ok := err.(*rejectedError); ok {
+		var rejected *rejectedError
+		if errors.As(err, &rejected) {
 			code = codeDaemonRejected
 		}
 		return writeLine(out, errorResponse(head.ID, code, err.Error()))

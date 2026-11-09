@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,10 +10,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -99,7 +98,7 @@ Service Management:
 
 Routing & Discovery:
   discover         Scan listening TCP processes and HTTP services
-  alias <aort> <u> Map a .localhost alias to an upstream target URL
+  alias <a> <url>  Map a .localhost alias to an upstream target URL
   status           Show protd daemon health and active routes
 
 Integrations & Diagnostics:
@@ -112,71 +111,6 @@ Options:
   --json           Format output as JSON where supported`)
 }
 
-type daemonClient struct {
-	adminAddr string
-	token     string
-}
-
-func getDaemonClient() (*daemonClient, error) {
-	dataDir := os.Getenv("PROT_DATA_DIR")
-	if dataDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		dataDir = filepath.Join(home, ".prot")
-	}
-
-	statePath := filepath.Join(dataDir, "daemon.json")
-	data, err := os.ReadFile(statePath)
-	if err != nil {
-		return nil, fmt.Errorf("daemon is not running (start with 'protd')")
-	}
-
-	var state struct {
-		PID       int    `json:"pid"`
-		AdminAddr string `json:"admin_addr"`
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("corrupt daemon state file: %w", err)
-	}
-
-	tokenPath := filepath.Join(dataDir, "auth.token")
-	tokenBytes, err := os.ReadFile(tokenPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading auth token: %w", err)
-	}
-
-	return &daemonClient{
-		adminAddr: state.AdminAddr,
-		token:     strings.TrimSpace(string(tokenBytes)),
-	}, nil
-}
-
-func (c *daemonClient) request(method, path string, body interface{}) (*http.Response, error) {
-	var bodyReader io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		bodyReader = bytes.NewReader(b)
-	}
-
-	url := fmt.Sprintf("http://%s%s", c.adminAddr, path)
-	req, err := http.NewRequest(method, url, bodyReader)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	return http.DefaultClient.Do(req)
-}
-
 func cmdList(args []string) {
 	jsonOutput := false
 	for _, a := range args {
@@ -185,25 +119,11 @@ func cmdList(args []string) {
 		}
 	}
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	resp, err := client.request(http.MethodGet, "/v1/services", nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Daemon request failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
 	var data struct {
 		Services []registry.ServiceView `json:"services"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		fmt.Fprintf(os.Stderr, "Decoding error: %v\n", err)
-		os.Exit(1)
+	if err := connect().call(http.MethodGet, "/v1/services", nil, &data, http.StatusOK); err != nil {
+		fatalf("Error: %v", err)
 	}
 
 	if jsonOutput {
@@ -262,26 +182,14 @@ func cmdList(args []string) {
 
 func cmdInspect(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot inspect <id_or_alias>")
-		os.Exit(1)
+		fatalf("Usage: prot inspect <id_or_alias>")
 	}
 	target := args[0]
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	resp, err := client.request(http.MethodGet, "/v1/services/"+target, nil)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Service %q not found\n", target)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
 	var svc registry.ServiceView
-	_ = json.NewDecoder(resp.Body).Decode(&svc)
+	if err := connect().call(http.MethodGet, servicePath(target), nil, &svc, http.StatusOK); err != nil {
+		fatalf("Service %q: %v", target, err)
+	}
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -315,12 +223,6 @@ func cmdAdd(args []string) {
 		*aliasFlag = strings.ToLower(strings.ReplaceAll(name, " ", "-"))
 	}
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
 	payload := storage.Service{
 		Name:          name,
 		Command:       *cmdFlag,
@@ -332,148 +234,64 @@ func cmdAdd(args []string) {
 		RestartPolicy: storage.RestartOnFailure,
 	}
 
-	resp, err := client.request(http.MethodPost, "/v1/services", payload)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to register service: %v\n", err)
-		os.Exit(1)
+	var created registry.ServiceView
+	if err := connect().call(http.MethodPost, "/v1/services", payload, &created, http.StatusCreated); err != nil {
+		fatalf("Failed to register service: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusCreated {
-		var created registry.ServiceView
-		_ = json.NewDecoder(resp.Body).Decode(&created)
-		fmt.Printf("✓ Registered service %q (ID: %s)\n", created.Name, created.ID)
-		fmt.Printf("  Alias:     http://%s.localhost\n", created.Alias)
-		fmt.Printf("  Command:   %s\n", created.Command)
-		fmt.Printf("  Run 'prot start %s' to start.\n", created.ID)
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", string(b))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Registered service %q (ID: %s)\n", created.Name, created.ID)
+	fmt.Printf("  Alias:     http://%s.localhost\n", created.Alias)
+	fmt.Printf("  Command:   %s\n", created.Command)
+	fmt.Printf("  Run 'prot start %s' to start.\n", created.ID)
 }
 
 func cmdStart(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot start <id_or_alias>")
-		os.Exit(1)
-	}
-	id := args[0]
-
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		fatalf("Usage: prot start <id_or_alias>")
 	}
 
-	resp, err := client.request(http.MethodPost, fmt.Sprintf("/v1/services/%s/start", id), nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Request failed: %v\n", err)
-		os.Exit(1)
+	var view registry.ServiceView
+	if err := connect().call(http.MethodPost, servicePath(args[0], "start"), nil, &view, http.StatusOK); err != nil {
+		fatalf("Failed to start: %v", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		var view registry.ServiceView
-		_ = json.NewDecoder(resp.Body).Decode(&view)
-		fmt.Printf("✓ Started %q (status: %s, PID: %d)\n", view.Name, view.Status, view.PID)
-		if view.CanonicalURL != "" {
-			fmt.Printf("  URL: %s\n", view.CanonicalURL)
-		}
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed to start: %s\n", string(b))
-		os.Exit(1)
+	fmt.Printf("✓ Started %q (status: %s, PID: %d)\n", view.Name, view.Status, view.PID)
+	if view.CanonicalURL != "" {
+		fmt.Printf("  URL: %s\n", view.CanonicalURL)
 	}
 }
 
 func cmdStop(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot stop <id_or_alias>")
-		os.Exit(1)
-	}
-	id := args[0]
-
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		fatalf("Usage: prot stop <id_or_alias>")
 	}
 
-	resp, err := client.request(http.MethodPost, fmt.Sprintf("/v1/services/%s/stop", id), nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Request failed: %v\n", err)
-		os.Exit(1)
+	if err := connect().call(http.MethodPost, servicePath(args[0], "stop"), nil, nil, http.StatusOK); err != nil {
+		fatalf("Failed to stop: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		fmt.Printf("✓ Stopped %q\n", id)
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed to stop: %s\n", string(b))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Stopped %q\n", args[0])
 }
 
 func cmdRestart(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot restart <id_or_alias>")
-		os.Exit(1)
-	}
-	id := args[0]
-
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		fatalf("Usage: prot restart <id_or_alias>")
 	}
 
-	resp, err := client.request(http.MethodPost, fmt.Sprintf("/v1/services/%s/restart", id), nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Request failed: %v\n", err)
-		os.Exit(1)
+	var view registry.ServiceView
+	if err := connect().call(http.MethodPost, servicePath(args[0], "restart"), nil, &view, http.StatusOK); err != nil {
+		fatalf("Failed to restart: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		var view registry.ServiceView
-		_ = json.NewDecoder(resp.Body).Decode(&view)
-		fmt.Printf("✓ Restarted %q (PID: %d)\n", view.Name, view.PID)
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed to restart: %s\n", string(b))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Restarted %q (PID: %d)\n", view.Name, view.PID)
 }
 
 func cmdRemove(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot rm <id_or_alias>")
-		os.Exit(1)
-	}
-	id := args[0]
-
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		fatalf("Usage: prot rm <id_or_alias>")
 	}
 
-	resp, err := client.request(http.MethodDelete, fmt.Sprintf("/v1/services/%s", id), nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Request failed: %v\n", err)
-		os.Exit(1)
+	if err := connect().call(http.MethodDelete, servicePath(args[0]), nil, nil, http.StatusNoContent); err != nil {
+		fatalf("Failed to remove: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNoContent {
-		fmt.Printf("✓ Removed service %q\n", id)
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed to remove: %s\n", string(b))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Removed service %q\n", args[0])
 }
 
 func cmdLogs(args []string) {
@@ -497,28 +315,24 @@ func cmdLogs(args []string) {
 		}
 	}
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	client := connect()
+	path := fmt.Sprintf("%s?limit=%d", servicePath(id, "logs"), lines)
 
-	path := fmt.Sprintf("/v1/services/%s/logs?limit=%d", id, lines)
+	// Following streams indefinitely, so it must not be subject to the ordinary request timeout.
+	var resp *http.Response
+	var err error
 	if follow {
-		path += "&follow=true"
+		resp, err = client.stream(path + "&follow=true")
+	} else {
+		resp, err = client.request(http.MethodGet, path, nil)
 	}
-
-	resp, err := client.request(http.MethodGet, path, nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Logs request failed: %v\n", err)
-		os.Exit(1)
+		fatalf("Logs request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed: %s\n", string(b))
-		os.Exit(1)
+		fatalf("Failed: %v", readAPIError(resp))
 	}
 
 	if follow {
@@ -559,8 +373,7 @@ func cmdLogs(args []string) {
 
 func cmdAdopt(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: prot adopt <discovery_id> [--alias <alias>] [--name <name>] [--cmd <cmd>]")
-		os.Exit(1)
+		fatalf("Usage: prot adopt <discovery_id> [--alias <alias>] [--name <name>] [--cmd <cmd>]")
 	}
 
 	discID := args[0]
@@ -570,35 +383,15 @@ func cmdAdopt(args []string) {
 	cmdFlag := fs.String("cmd", "", "Launch command")
 	_ = fs.Parse(args[1:])
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	payload := map[string]string{"name": *nameFlag, "alias": *aliasFlag, "command": *cmdFlag}
+	path := "/v1/discovery/" + url.PathEscape(discID) + "/adopt"
 
-	payload := map[string]string{
-		"name":    *nameFlag,
-		"alias":   *aliasFlag,
-		"command": *cmdFlag,
+	var view registry.ServiceView
+	if err := connect().call(http.MethodPost, path, payload, &view, http.StatusCreated); err != nil {
+		fatalf("Adopt failed: %v", err)
 	}
-
-	resp, err := client.request(http.MethodPost, fmt.Sprintf("/v1/discovery/%s/adopt", discID), payload)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Adopt failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusCreated {
-		var view registry.ServiceView
-		_ = json.NewDecoder(resp.Body).Decode(&view)
-		fmt.Printf("✓ Adopted service %q (ID: %s)\n", view.Name, view.ID)
-		fmt.Printf("  Alias: %s\n", view.CanonicalURL)
-	} else {
-		b, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Adopt failed: %s\n", string(b))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Adopted service %q (ID: %s)\n", view.Name, view.ID)
+	fmt.Printf("  Alias: %s\n", view.CanonicalURL)
 }
 
 // cmdMCP runs the MCP stdio adapter. It is a thin bridge to the running daemon: all tool calls execute inside
@@ -776,9 +569,7 @@ func cmdStatus(args []string) {
 
 func cmdAlias(args []string) {
 	if len(args) < 2 {
-		fmt.Println("Usage: prot alias <alias> <upstream_url>")
-		fmt.Println("Example: prot alias myapp http://localhost:3000")
-		os.Exit(1)
+		fatalf("Usage: prot alias <alias> <upstream_url>\nExample: prot alias myapp http://localhost:3000")
 	}
 
 	alias := args[0]
@@ -787,32 +578,11 @@ func cmdAlias(args []string) {
 		upstream = "http://" + upstream
 	}
 
-	client, err := getDaemonClient()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\nStart the daemon with 'protd' first.\n", err)
-		os.Exit(1)
+	payload := map[string]any{"alias": alias, "target_url": upstream, "lan_exposed": false}
+	if err := connect().call(http.MethodPost, "/v1/routes", payload, nil, http.StatusCreated); err != nil {
+		fatalf("Failed to register alias: %v", err)
 	}
-
-	payload := map[string]interface{}{
-		"alias":       alias,
-		"target_url":  upstream,
-		"lan_exposed": false,
-	}
-
-	resp, err := client.request(http.MethodPost, "/v1/routes", payload)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to daemon: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusCreated {
-		fmt.Printf("✓ Alias registered: http://%s.localhost -> %s\n", alias, upstream)
-	} else {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Failed to register alias: %s\n", string(body))
-		os.Exit(1)
-	}
+	fmt.Printf("✓ Alias registered: http://%s.localhost -> %s\n", alias, upstream)
 }
 
 func cmdDoctor(args []string) {
@@ -870,7 +640,7 @@ func cmdDoctor(args []string) {
 	case "linux", "darwin":
 		fmt.Println("      Tier 1 (Full Support): All discovery, proxy, and tunnel features supported.")
 	case "windows":
-		fmt.Println("      Tier 2 (Technical Preview): Core proxy supported; process discovery supported via gopsutil.")
+		fmt.Println("      Not supported: the supervisor and tunnels need a Unix-like OS for now.")
 	default:
 		fmt.Printf("      Untested platform: %s\n", runtime.GOOS)
 	}
