@@ -84,6 +84,9 @@ sed -i -E "/^name = \"prot-desktop\"$/{n;s/^version = \"[^\"]+\"/version = \"$NE
 # 8. Point the README's and the website's download buttons (.deb, .rpm, .dmg) at this version's release assets
 sed -i -E "s#releases/download/v[0-9]+\.[0-9]+\.[0-9]+/prot_[0-9]+\.[0-9]+\.[0-9]+_#releases/download/v$NEW_VERSION/prot_${NEW_VERSION}_#" "$ROOT_DIR/README.md" "$ROOT_DIR/site/index.html"
 
+# ...and the "install v0.x.y" label above the install command on the website
+sed -i -E "s#install v[0-9]+\.[0-9]+\.[0-9]+#install v$NEW_VERSION#" "$ROOT_DIR/site/index.html"
+
 echo "✓ Updated version to $NEW_VERSION across all project manifests:"
 echo "  • internal/daemon/daemon.go"
 echo "  • apps/desktop/package.json"

@@ -6,6 +6,14 @@
   <b>Stable <code>.localhost</code> URLs and one control plane for all your development servers.</b>
 </p>
 
+<p align="center">
+  <a href="https://github.com/terastal-hq/prot/releases"><img src="docs/assets/badges/release.svg" alt="Latest release" height="20" /></a>
+  <a href="https://github.com/terastal-hq/prot/blob/main/go.mod"><img src="docs/assets/badges/go.svg" alt="Go version" height="20" /></a>
+  <a href="https://aur.archlinux.org/packages/prot"><img src="docs/assets/badges/aur.svg" alt="AUR package" height="20" /></a>
+  <a href="https://github.com/terastal-hq/prot/blob/main/docs/support-matrix.md"><img src="docs/assets/badges/platform.svg" alt="Supported platforms" height="20" /></a>
+  <a href="https://github.com/terastal-hq/prot/blob/main/LICENSE"><img src="docs/assets/badges/license.svg" alt="MIT license" height="20" /></a>
+</p>
+
 Prot is a local-first developer utility and control plane that discovers, organizes, routes, and manages development services, whether they run locally or through remote SSH connections.
 
 It provides stable service identities and addresses (`http://<alias>.localhost`) independent of underlying process IDs, TCP ports, and infrastructure locations.
@@ -20,17 +28,16 @@ It provides stable service identities and addresses (`http://<alias>.localhost`)
 Install the `prot` CLI, background daemon (`protd`), and systemd/launchd service with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
+curl -fsSL https://prot.adityagupta.dev/install | bash
 ```
 
 Or take a package for your system:
 
 <p align="center">
-  <a href="https://github.com/terastal-hq/prot/blob/main/docs/installation.md#arch-linux-aur"><img src="docs/assets/buttons/arch.svg" alt="Arch Linux: install from the AUR" width="244" /></a>
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.deb"><img src="docs/assets/buttons/debian.svg" alt="Debian and Ubuntu: download the .deb" width="244" /></a>
-  <br />
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.rpm"><img src="docs/assets/buttons/fedora.svg" alt="Fedora and RHEL: download the .rpm" width="244" /></a>
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_aarch64.dmg"><img src="docs/assets/buttons/macos.svg" alt="macOS: download the .dmg" width="244" /></a>
+  <a href="https://github.com/terastal-hq/prot/blob/main/docs/installation.md#arch-linux-aur"><img src="docs/assets/buttons/arch.svg" alt="Arch Linux: install from the AUR" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.deb"><img src="docs/assets/buttons/debian.svg" alt="Debian and Ubuntu: download the .deb" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.rpm"><img src="docs/assets/buttons/fedora.svg" alt="Fedora and RHEL: download the .rpm" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_aarch64.dmg"><img src="docs/assets/buttons/macos.svg" alt="macOS: download the .dmg" width="186" /></a>
 </p>
 
 For other architectures, the desktop installers (`.AppImage`, `.deb`), and build instructions, see the **[Installation Guide](docs/installation.md)**.

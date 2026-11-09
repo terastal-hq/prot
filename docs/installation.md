@@ -10,7 +10,7 @@
 The fastest way to install the `prot` CLI, background daemon (`protd`), and register the background service is using the one-line installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
+curl -fsSL https://prot.adityagupta.dev/install | bash
 ```
 
 On Arch Linux, prefer the [AUR packages](#arch-linux-aur) below, which your package manager can update.
@@ -216,7 +216,7 @@ The updater:
 You can also re-run the one-line installer at any time:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
+curl -fsSL https://prot.adityagupta.dev/install | bash
 ```
 
 ---

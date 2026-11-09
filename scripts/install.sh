@@ -4,7 +4,7 @@
 # Installs prot CLI and protd background daemon.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
+#   curl -fsSL https://prot.adityagupta.dev/install | bash
 #
 set -euo pipefail
 
