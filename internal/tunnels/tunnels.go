@@ -77,6 +77,7 @@ type Manager struct {
 	observer     func(TunnelStatus)
 	secret       func(tunnelID string) (string, error) // looks up a tunnel's stored password
 	askpassPath  string                                // program ssh runs to ask for it; defaults to this binary
+	configFile   string                                // ssh client configuration (-F); empty means ssh's default
 }
 
 // Timing for tunnel supervision.
@@ -107,6 +108,14 @@ func NewManagerWithSSH(sshPath string) *Manager {
 func (m *Manager) SetObserver(fn func(TunnelStatus)) {
 	m.mu.Lock()
 	m.observer = fn
+	m.mu.Unlock()
+}
+
+// SetConfigFile makes every ssh run read its client configuration from path instead of ~/.ssh/config, so tunnels
+// resolve machine names from the same file the daemon lists them from.
+func (m *Manager) SetConfigFile(path string) {
+	m.mu.Lock()
+	m.configFile = path
 	m.mu.Unlock()
 }
 
@@ -408,6 +417,12 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		return err
 	}
 	args := sshArgs(st.cfg, localPort)
+	m.mu.RLock()
+	configFile := m.configFile
+	m.mu.RUnlock()
+	if configFile != "" {
+		args = append([]string{"-F", configFile}, args...)
+	}
 
 	cmd := exec.CommandContext(ctx, m.sshPath, args...)
 	cmd.Env = env

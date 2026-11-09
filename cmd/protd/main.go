@@ -24,6 +24,7 @@ func main() {
 	gatewayAddr := flag.String("gateway", "127.0.0.1:8080", "Proxy gateway address to listen on")
 	adminAddr := flag.String("admin", "127.0.0.1:4400", "Loopback management API address")
 	dataDir := flag.String("data-dir", "", "Configuration and state directory (default $PROT_DATA_DIR, then ~/.prot)")
+	sshConfig := flag.String("ssh-config", "", "ssh client configuration to read machine names from (default ~/.ssh/config)")
 	versionFlag := flag.Bool("version", false, "Print daemon version and exit")
 	flag.Parse()
 
@@ -46,6 +47,8 @@ func main() {
 	} else if env := os.Getenv("PROT_DATA_DIR"); env != "" {
 		cfg.DataDir = env
 	}
+
+	cfg.SSHConfigPath = *sshConfig
 
 	d, err := daemon.New(cfg)
 	if err != nil {

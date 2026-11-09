@@ -407,3 +407,34 @@ func TestListIsSortedAndStable(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigFileIsPassedToSSH(t *testing.T) {
+	// The fake ssh records its arguments, so we can see -F come first.
+	argsFile := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "ssh")
+	body := "#!/bin/sh\necho \"$@\" > " + argsFile + "\nexec sleep 60\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManagerWithSSH(script)
+	m.SetConfigFile("/tmp/custom_config")
+	t.Cleanup(m.StopAll)
+	cfg := TunnelConfig{ID: "t1", Alias: "a", SSHHost: "prod-db", RemoteHost: "127.0.0.1", RemotePort: 80, LocalPort: 0}
+	if _, err := m.Register(cfg); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = m.Start(context.Background(), "t1")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(argsFile); err == nil && len(data) > 0 {
+			if !strings.HasPrefix(string(data), "-F /tmp/custom_config ") || !strings.Contains(string(data), " prod-db") {
+				t.Errorf("ssh arguments: %q", data)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("fake ssh was never run")
+}

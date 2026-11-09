@@ -110,6 +110,10 @@ func New(cfg Config) (*Daemon, error) {
 		tunMgr = mgr
 	}
 
+	if tunMgr != nil && cfg.SSHConfigPath != "" {
+		tunMgr.SetConfigFile(cfg.SSHConfigPath)
+	}
+
 	secretStore := cfg.Secrets
 	if secretStore == nil {
 		secretStore = secrets.Keyring{}
