@@ -1239,3 +1239,14 @@ code {
   padding: 2px 6px;
   background: var(--gold);
 }
+
+/* hide the native number spinners */
+.input-well input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.input-well input[type="number"]::-webkit-inner-spin-button,
+.input-well input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
