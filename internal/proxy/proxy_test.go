@@ -119,25 +119,40 @@ func TestDynamicPortUpdate(t *testing.T) {
 	}
 }
 
-func TestManagementIsolation(t *testing.T) {
+// Apps must receive every path unchanged, including ones that look like prot's own management routes.
+func TestProxyForwardsManagementLookingPaths(t *testing.T) {
+	var seen []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.RequestURI())
+		_, _ = w.Write([]byte("app:" + r.URL.Path))
+	}))
+	defer upstream.Close()
+
 	router := NewRouter()
+	if err := router.SetRoute("app", upstream.URL, false); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
 	proxySrv := NewServer(router, ServerOptions{ListenAddr: "127.0.0.1:0"})
-	_ = proxySrv.Start()
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
 	defer func() { _ = proxySrv.Close(context.Background()) }()
 
-	proxyAddr := proxySrv.Addr()
-
-	for _, path := range []string{"/v1/services", "/v1/events", "/mcp"} {
-		req, _ := http.NewRequest(http.MethodGet, "http://"+proxyAddr+path, nil)
+	for _, path := range []string{"/v1/users", "/v1/services?limit=5", "/v1/chat/completions", "/mcp"} {
+		req, _ := http.NewRequest(http.MethodGet, "http://"+proxySrv.Addr()+path, nil)
 		req.Host = "app.localhost"
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			t.Fatalf("req failed: %v", err)
+			t.Fatalf("%s: %v", path, err)
 		}
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusForbidden {
-			t.Errorf("expected 403 Forbidden for management path %s, got %d", path, resp.StatusCode)
+		if resp.StatusCode != http.StatusOK || !strings.HasPrefix(string(body), "app:") {
+			t.Errorf("%s: status %d body %q, want the upstream's response", path, resp.StatusCode, body)
 		}
+	}
+	if len(seen) != 4 || seen[1] != "/v1/services?limit=5" {
+		t.Errorf("upstream saw %v, want all four requests with paths and queries intact", seen)
 	}
 }
 

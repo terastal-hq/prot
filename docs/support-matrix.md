@@ -27,7 +27,7 @@
 - **Domain Namespace:** Default `.localhost` routing (e.g. `frontend.localhost`, `api.localhost`).
 - **Dynamic Updates:** Upstream port changes are applied immediately in memory without restarting proxy listeners or interrupting active connections on unaffected routes.
 - **WebSocket & HMR Support:** Streaming responses flush with zero buffer delay; WebSockets pass full-duplex frames.
-- **Security Isolation:** Management REST API (`/v1/*`) and MCP endpoints (`/mcp`) are strictly forbidden through the dev reverse proxy.
+- **Security Isolation:** The management REST API (`/v1/*`) and MCP (`/mcp`) are served only on a separate loopback listener (default `127.0.0.1:4400`) behind token authentication and DNS-rebinding checks. The dev gateway never serves them, so every path on `<alias>.localhost` belongs to your app, including ones like `/v1/users`.
 - **LAN Sharing Policy:** Routes are private (loopback-only) by default. LAN exposure must be explicitly enabled per route.
 
 ### C. SSH Tunnel Supervision (`internal/tunnels`)

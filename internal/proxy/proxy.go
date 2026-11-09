@@ -206,14 +206,9 @@ func isLoopback(remoteAddr string) bool {
 
 // ServeHTTP handles requests, routes them to upstreams or renders diagnostics.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Management isolation check:
-	// Do not allow the dev proxy to reach daemon management endpoints
-	if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/mcp" {
-		msg := `{"error": "forbidden", "message": "Management endpoints are isolated and not accessible via reverse proxy"}`
-		http.Error(w, msg, http.StatusForbidden)
-		return
-	}
-
+	// The management API (/v1/*) and MCP (/mcp) are served by a separate loopback listener with token
+	// authentication, never by this gateway, so every path here belongs to the upstream app. Reserving
+	// prefixes like /v1/ would break ordinary development APIs.
 	route, ok := s.router.Match(r.Host)
 	if !ok {
 		// Friendly prot route not found page
