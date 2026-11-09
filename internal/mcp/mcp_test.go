@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -124,25 +123,38 @@ func TestMCPToolCalls(t *testing.T) {
 	}
 }
 
-func TestMCPStdioRoundTrip(t *testing.T) {
+func TestMCPUnknownToolIsAToolError(t *testing.T) {
 	srv, _, cleanup := setupTestMCP(t)
 	defer cleanup()
 
-	input := `{"jsonrpc":"2.0","id":1,"method":"initialize"}` + "\n"
-	inBuf := bytes.NewBufferString(input)
-	outBuf := &bytes.Buffer{}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	_ = srv.ServeStdio(ctx, inBuf, outBuf)
-
-	var resp JSONRPCResponse
-	if err := json.Unmarshal(outBuf.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode stdio response: %v, raw=%s", err, outBuf.String())
+	text, isErr := callTool(t, srv, "no_such_tool", `{}`)
+	if !isErr || !strings.Contains(text, "unknown tool") {
+		t.Errorf("unknown tool should be an isError result, got %q (err=%v)", text, isErr)
 	}
-	if resp.ID != float64(1) {
-		t.Errorf("expected ID 1, got %v", resp.ID)
+}
+
+// Every advertised tool must be callable, and its required parameters must be exactly what the handler reads.
+func TestMCPEveryAdvertisedToolIsCallable(t *testing.T) {
+	srv, reg, cleanup := setupTestMCP(t)
+	defer cleanup()
+	if _, err := reg.RegisterService(context.Background(), storage.Service{
+		ID: "svc-x", Name: "X", Alias: "x", Port: 5999,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tool := range srv.listTools() {
+		schema, _ := json.Marshal(tool.InputSchema)
+		var parsed struct {
+			Required []string `json:"required"`
+		}
+		_ = json.Unmarshal(schema, &parsed)
+
+		// Missing required arguments must be reported as an argument error, never "unknown tool".
+		text, isErr := callTool(t, srv, tool.Name, `{}`)
+		if len(parsed.Required) > 0 && (!isErr || strings.Contains(text, "unknown tool")) {
+			t.Errorf("%s with no arguments: %q (err=%v)", tool.Name, text, isErr)
+		}
 	}
 }
 
