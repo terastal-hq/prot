@@ -709,6 +709,11 @@ func cmdUpdate(args []string) {
 		return
 	}
 
+	applyRelease(ctx, rel)
+}
+
+// applyRelease downloads, verifies and installs the release, then restarts the daemon. It exits on failure.
+func applyRelease(ctx context.Context, rel *updater.ReleaseInfo) {
 	fmt.Printf("Updating prot from %s to %s...\n", daemon.Version, rel.TagName)
 	asset, err := updater.FindAssetForPlatform(rel)
 	if err != nil {

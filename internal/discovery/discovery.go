@@ -58,6 +58,9 @@ func DefaultConfig() Config {
 	}
 }
 
+// maxConcurrentHTTPChecks bounds the probes in flight to avoid socket storms.
+const maxConcurrentHTTPChecks = 8
+
 // Discover scans local listening TCP sockets and identifies processes.
 func Discover(ctx context.Context, cfg Config) ([]ProcessService, error) {
 	if cfg.HTTPTimeout <= 0 {
@@ -67,31 +70,37 @@ func Discover(ctx context.Context, cfg Config) ([]ProcessService, error) {
 		cfg.MaxBodyBytes = 4096
 	}
 
+	services, err := listListeners(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if !cfg.CheckHTTP || len(services) == 0 {
+		return services, nil
+	}
+	return probeHTTP(ctx, services, cfg), nil
+}
+
+// listListeners returns one entry per distinct listening endpoint, enriched with process details.
+func listListeners(ctx context.Context, cfg Config) ([]ProcessService, error) {
 	conns, err := gopsnet.ConnectionsWithContext(ctx, "tcp")
 	if err != nil {
 		return nil, fmt.Errorf("listing network connections: %w", err)
 	}
 
-	ignoreMap := make(map[uint32]bool, len(cfg.IgnorePorts))
+	ignorePorts := make(map[uint32]bool, len(cfg.IgnorePorts))
 	for _, p := range cfg.IgnorePorts {
-		ignoreMap[p] = true
+		ignorePorts[p] = true
 	}
-	excludePidMap := make(map[int32]bool, len(cfg.ExcludePids))
+	excludePids := make(map[int32]bool, len(cfg.ExcludePids))
 	for _, pid := range cfg.ExcludePids {
-		excludePidMap[pid] = true
+		excludePids[pid] = true
 	}
 
 	seenEndpoints := make(map[string]bool)
-	rawServices := []ProcessService{}
+	services := []ProcessService{}
 
 	for _, c := range conns {
-		if c.Status != "LISTEN" {
-			continue
-		}
-		if ignoreMap[c.Laddr.Port] {
-			continue
-		}
-		if excludePidMap[c.Pid] {
+		if c.Status != "LISTEN" || ignorePorts[c.Laddr.Port] || excludePids[c.Pid] {
 			continue
 		}
 
@@ -105,54 +114,50 @@ func Discover(ctx context.Context, cfg Config) ([]ProcessService, error) {
 			PID:          c.Pid,
 			IP:           c.Laddr.IP,
 			Port:         c.Laddr.Port,
+			Family:       "IPv4",
 			DiscoveredAt: time.Now().UTC(),
 		}
-
 		if strings.Contains(c.Laddr.IP, ":") {
 			svc.Family = "IPv6"
-		} else {
-			svc.Family = "IPv4"
 		}
-
 		if c.Pid > 0 {
 			enrichProcessDetails(ctx, &svc)
 		}
 
-		// Calculate stable fingerprint: PID + CreateTime + Exe + Port
+		// Stable fingerprint: PID + CreateTime + Exe + Port
 		svc.Fingerprint = computeFingerprint(svc)
 		svc.ID = fmt.Sprintf("disc_%s_%d", svc.Fingerprint[:12], svc.Port)
 
-		rawServices = append(rawServices, svc)
+		services = append(services, svc)
 	}
+	return services, nil
+}
 
-	if !cfg.CheckHTTP || len(rawServices) == 0 {
-		return rawServices, nil
-	}
-
-	// Concurrent bounded HTTP checks
+// probeHTTP checks every service for an HTTP endpoint, a bounded number at a time. Results keep input order.
+func probeHTTP(ctx context.Context, services []ProcessService, cfg Config) []ProcessService {
 	var wg sync.WaitGroup
-	results := make([]ProcessService, len(rawServices))
-	sem := make(chan struct{}, 8) // Limit concurrency to avoid socket storms
+	results := make([]ProcessService, len(services))
+	sem := make(chan struct{}, maxConcurrentHTTPChecks)
 
-	for i, s := range rawServices {
+	for i, svc := range services {
 		wg.Add(1)
-		go func(idx int, target ProcessService) {
+		go func() {
 			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-ctx.Done():
-				results[idx] = target
+				results[i] = svc
 				return
 			}
 
-			checkHTTPService(ctx, &target, cfg)
-			results[idx] = target
-		}(i, s)
+			checkHTTPService(ctx, &svc, cfg)
+			results[i] = svc
+		}()
 	}
 
 	wg.Wait()
-	return results, nil
+	return results
 }
 
 func enrichProcessDetails(ctx context.Context, s *ProcessService) {
