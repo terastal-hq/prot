@@ -301,6 +301,21 @@ function ConfirmRemove(props: { question: string; onCancel: () => void; onConfir
   );
 }
 
+/** The SSH port is stored as a "-p N" pair among the extra ssh arguments; the rest is kept as it is. */
+function splitSshArgs(args: string[] = []): { port: string; rest: string[] } {
+  const rest: string[] = [];
+  let port = "";
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "-p" && i + 1 < args.length) {
+      port = args[i + 1];
+      i++;
+    } else {
+      rest.push(args[i]);
+    }
+  }
+  return { port, rest };
+}
+
 const inTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI__);
 
 /** Minimize and close; the OS title bar is disabled in tauri.conf.json, so the app header is the title bar. */
@@ -428,6 +443,10 @@ export function App() {
 
   // New tunnel sheet
   const [showAddTunnel, setShowAddTunnel] = useState(false);
+  // The tunnel the sheet is editing, or null when it creates a new one. The sheet is shared.
+  const [editingTunnel, setEditingTunnel] = useState<TunnelStatus | null>(null);
+  // Extra ssh arguments of the tunnel being edited, other than "-p N"; they are kept as they are.
+  const editExtraArgs = useRef<string[]>([]);
   const [tunAlias, setTunAlias] = useState("");
   const [tunHost, setTunHost] = useState("");
   const [tunRemotePort, setTunRemotePort] = useState("");
@@ -709,7 +728,34 @@ export function App() {
     prefill.current = { port: "", identity: "", user: "" };
   };
 
-  const handleCreateTunnel = async (e: React.FormEvent) => {
+  const openEditTunnel = (t: TunnelStatus) => {
+    resetTunnelForm();
+    const { port, rest } = splitSshArgs(t.config.extra_args);
+    editExtraArgs.current = rest;
+    setTunAlias(t.config.alias);
+    setTunHost(t.config.ssh_host);
+    setTunUser(t.config.ssh_user ?? "");
+    setTunRemotePort(String(t.config.remote_port));
+    setTunRemoteHost(t.config.remote_host);
+    setTunLocalPort(t.config.local_port ? String(t.config.local_port) : "");
+    setTunIdentity(t.config.identity_file ?? "");
+    setTunSshPort(port);
+    setTunAuto(t.config.auto_connect);
+    setEditingTunnel(t);
+    setShowAddTunnel(true);
+  };
+
+  /** Closes the tunnel sheet. An edit is discarded; a half-filled new tunnel is kept for next time. */
+  const closeTunnelSheet = () => {
+    setShowAddTunnel(false);
+    if (editingTunnel) {
+      setEditingTunnel(null);
+      editExtraArgs.current = [];
+      resetTunnelForm();
+    }
+  };
+
+  const handleSaveTunnel = async (e: React.FormEvent) => {
     e.preventDefault();
     // "user@host" is the familiar spelling; the API takes the user separately. A user typed into the User box
     // wins over one in the host box, and a value that was only copied from ~/.ssh/config is left to ssh.
@@ -719,6 +765,28 @@ export function App() {
     const typedUser = tunUser.trim() !== prefill.current.user ? tunUser.trim() : "";
     const sshUser = typedUser || hostUser || undefined;
     try {
+      if (editingTunnel) {
+        // Everything is sent, so what the user cleared is cleared. Values that were only copied from
+        // ~/.ssh/config stay empty and are left to ssh.
+        const port = tunSshPort && tunSshPort !== prefill.current.port ? ["-p", String(parseInt(tunSshPort, 10))] : [];
+        await client.updateTunnel(editingTunnel.config.id, {
+          alias: tunAlias.trim().toLowerCase(),
+          ssh_host: sshHost.trim(),
+          ssh_user: sshUser ?? "",
+          remote_host: tunRemoteHost.trim(),
+          remote_port: parseInt(tunRemotePort, 10),
+          local_port: tunLocalPort ? parseInt(tunLocalPort, 10) : 0,
+          identity_file: tunIdentity.trim() && tunIdentity !== prefill.current.identity ? tunIdentity.trim() : "",
+          extra_args: [...port, ...editExtraArgs.current],
+          auto_connect: tunAuto,
+        });
+        setShowAddTunnel(false);
+        setEditingTunnel(null);
+        editExtraArgs.current = [];
+        resetTunnelForm();
+        await refreshData();
+        return;
+      }
       await client.createTunnel({
         alias: tunAlias.trim().toLowerCase(),
         ssh_host: sshHost.trim(),
@@ -1103,6 +1171,9 @@ export function App() {
                     >
                       <KeyRound size={14} strokeWidth={2.5} />
                     </button>
+                    <button className="icon-btn" title="Edit tunnel settings" onClick={() => openEditTunnel(t)}>
+                      <Settings2 size={14} strokeWidth={2.5} />
+                    </button>
                     <span className="spacer" />
                     <button className="icon-btn danger" title="Remove" onClick={() => setConfirmingRemove(t.config.id)}>
                       <Trash2 size={14} strokeWidth={2.5} />
@@ -1253,12 +1324,12 @@ export function App() {
         </form>
       )}
 
-      {/* New tunnel sheet */}
+      {/* New / edit tunnel sheet */}
       {showAddTunnel && (
-        <form className="sheet" onSubmit={handleCreateTunnel}>
+        <form className="sheet" onSubmit={handleSaveTunnel}>
           <div className="sheet-head">
-            <h2>new tunnel</h2>
-            <button type="button" className="icon-btn" onClick={() => setShowAddTunnel(false)} aria-label="Close">
+            <h2>{editingTunnel ? "edit tunnel" : "new tunnel"}</h2>
+            <button type="button" className="icon-btn" onClick={closeTunnelSheet} aria-label="Close">
               <X size={16} strokeWidth={2.5} />
             </button>
           </div>
@@ -1288,30 +1359,41 @@ export function App() {
             </div>
             <Field label="Remote host" placeholder="127.0.0.1" value={tunRemoteHost} onChange={setTunRemoteHost} />
             <Field label="Identity file" placeholder="~/.ssh/id_ed25519" prompt="/" value={tunIdentity} onChange={setTunIdentity} />
-            <Field
-              label="Password or key passphrase (optional)"
-              type="password"
-              placeholder="kept in your OS keyring"
-              prompt="*"
-              value={tunPassword}
-              onChange={setTunPassword}
-            />
+            {!editingTunnel && (
+              <Field
+                label="Password or key passphrase (optional)"
+                type="password"
+                placeholder="kept in your OS keyring"
+                prompt="*"
+                value={tunPassword}
+                onChange={setTunPassword}
+              />
+            )}
             <label className="check">
               <input type="checkbox" checked={tunAuto} onChange={(e) => setTunAuto(e.target.checked)} />
-              Connect now, and whenever protd starts
+              {editingTunnel ? "Connect whenever protd starts" : "Connect now, and whenever protd starts"}
             </label>
-            <p className="dim">
-              ssh runs without a terminal, so it cannot ask. Use a key from ssh-agent, or store a password or passphrase
-              here (kept in the OS keyring, never in prot&apos;s files). Connect to the host once from a terminal first so
-              ssh trusts its host key.
-            </p>
+            {editingTunnel ? (
+              <p className="dim">
+                {editingTunnel.state === "disconnected"
+                  ? "The new settings are used the next time this tunnel connects."
+                  : "This tunnel reconnects with the new settings when you save."}{" "}
+                The password has its own key button on the card.
+              </p>
+            ) : (
+              <p className="dim">
+                ssh runs without a terminal, so it cannot ask. Use a key from ssh-agent, or store a password or
+                passphrase here (kept in the OS keyring, never in prot&apos;s files). Connect to the host once from a
+                terminal first so ssh trusts its host key.
+              </p>
+            )}
           </div>
           <div className="sheet-foot">
-            <button type="button" className="btn" onClick={() => setShowAddTunnel(false)}>
+            <button type="button" className="btn" onClick={closeTunnelSheet}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">
-              Create
+              {editingTunnel ? "Save" : "Create"}
             </button>
           </div>
         </form>

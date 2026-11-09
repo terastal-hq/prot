@@ -1,4 +1,4 @@
-import { DaemonHealth, DiscoveredProcess, LogEntry, NewTunnel, ServiceView, SSHMachine, TunnelStatus } from "./types";
+import { DaemonHealth, DiscoveredProcess, LogEntry, NewTunnel, ServiceView, SSHMachine, TunnelPatch, TunnelStatus } from "./types";
 
 export class ProtClient {
   private baseUrl: string;
@@ -154,6 +154,14 @@ export class ProtClient {
     return this.request<TunnelStatus>("/v1/tunnels", {
       method: "POST",
       body: JSON.stringify(tun),
+    });
+  }
+
+  /** Edits a tunnel in place; one that was connected reconnects with the new settings. */
+  async updateTunnel(id: string, patch: TunnelPatch): Promise<TunnelStatus> {
+    return this.request<TunnelStatus>(`/v1/tunnels/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     });
   }
 

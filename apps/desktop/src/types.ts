@@ -78,6 +78,9 @@ export interface NewTunnel {
   password?: string;
 }
 
+/** An edit of a saved tunnel: only the fields present change, and an empty string clears an optional one. */
+export type TunnelPatch = Partial<Omit<NewTunnel, "password">>;
+
 export interface DaemonHealth {
   status: string;
   version: string;
