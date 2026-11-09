@@ -487,7 +487,7 @@
     let S = { x: 0, y: 0 };
     let H = { x: 0, y: 0 };
     let Lmax = 400;
-    const pose = { x: 0, y: 0, a: 0.08, sag: 36 };
+    const pose = { x: 0, y: 0, a: 0, sag: 36 };
     let plugged = true;
     let tween = 0;
     let dragging = false;
@@ -505,7 +505,8 @@
       const c = rel(cardEl);
       const k = rel(rack);
       A = { x: c.r - 28, y: c.t + c.h * 0.52 };
-      S = { x: k.l + 10, y: k.t + k.h * 0.5 };
+      // the slot is cut into the rack from its left edge (14/220 of its width in); the plug tip sits 12px inside it
+      S = { x: k.l + (k.w * 14) / 220 + 12, y: k.t + k.h * 0.464 };
       H = { x: clamp(S.x - 130, 120, sec.clientWidth - 120), y: Math.min(sec.clientHeight - 36, S.y + 190) };
       Lmax = Math.hypot(S.x - A.x, S.y - A.y) * 1.16 + 50;
       svg.setAttribute("viewBox", `0 0 ${sec.clientWidth} ${sec.clientHeight}`);
@@ -574,7 +575,7 @@
       sec.classList.add("touched");
       clearTimeout(reconnect);
       if (flag) {
-        go({ x: S.x, y: S.y, a: 0.08, sag: 36 }, 650);
+        go({ x: S.x, y: S.y, a: 0, sag: 36 }, 650);
         // ssh does not come back instantly: the card says so for a moment
         reconnect = setTimeout(() => show("connected"), 1100);
       } else {
@@ -645,7 +646,7 @@
 
     const settle = () => {
       measure();
-      const to = plugged ? { x: S.x, y: S.y, a: 0.08, sag: 36 } : { x: H.x, y: H.y, a: 1.28, sag: 130 };
+      const to = plugged ? { x: S.x, y: S.y, a: 0, sag: 36 } : { x: H.x, y: H.y, a: 1.28, sag: 130 };
       Object.assign(pose, to);
       draw();
     };

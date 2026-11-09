@@ -701,17 +701,6 @@ a { color: inherit; }
   transform: rotate(1.6deg);
 }
 .rack-svg { width: 100%; height: auto; display: block; }
-.rack::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 41%;
-  z-index: 3;
-  width: 15px;
-  height: 30px;
-  background: #000;
-  border: 2px solid #7a8082;
-}
 .rack-led { animation: blink 1.6s steps(1, end) infinite; }
 .rack-led:nth-of-type(2) { animation-delay: 0.45s; }
 @keyframes blink { 50% { fill: #1e6f1a; } }
@@ -733,7 +722,7 @@ a { color: inherit; }
   position: absolute;
   left: 0;
   top: 0;
-  z-index: 4;
+  z-index: 5;
   width: 70px;
   height: 46px;
   padding: 0;
