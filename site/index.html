@@ -199,8 +199,8 @@
     keyring, never on disk or in a command line.</p>
   </div>
   <div class="tun-card" id="tun-card">
-    <img class="on" data-s="connected"    src="assets/img/tunnel-connected.png"    width="956" height="424" alt="The proxmox tunnel, connected">
-    <img data-s="reconnecting" src="assets/img/tunnel-reconnecting.png" width="956" height="424" alt="" aria-hidden="true">
+    <img data-s="connected"    src="assets/img/tunnel-connected.png"    width="956" height="424" alt="" aria-hidden="true">
+    <img class="on" data-s="reconnecting" src="assets/img/tunnel-reconnecting.png" width="956" height="424" alt="The proxmox tunnel, retrying">
   </div>
 
   <svg class="cable-svg" id="cable-svg" viewBox="0 0 1000 420" preserveAspectRatio="none" aria-hidden="true">
@@ -246,7 +246,7 @@
     <div class="rack-tag">192.168.0.109</div>
   </div>
 
-  <button class="plug" id="plug" type="button" aria-pressed="true" aria-label="Unplug the cable">
+  <button class="plug" id="plug" type="button" aria-pressed="false" aria-label="Plug the cable back in">
     <svg viewBox="0 0 70 46" aria-hidden="true">
       <rect x="2" y="9" width="40" height="28" rx="3" fill="#2a2e30" stroke="#000" stroke-width="3"/>
       <rect x="2" y="9" width="40" height="8" fill="#6f7678"/>

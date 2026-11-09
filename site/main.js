@@ -481,14 +481,16 @@
     const paths = ["#cable-shadow", "#cable-edge", "#cable-body", "#cable-shine", "#cable-pulse"].map((s) => $(s));
     const imgs = $$("img", cardEl);
     const show = (s) => imgs.forEach((i) => i.classList.toggle("on", i.dataset.s === s));
-    show("connected");
+    // it starts unplugged: the card says RETRYING until the visitor plugs the cable in
+    show("reconnecting");
+    sec.classList.add("off");
 
     let A = { x: 0, y: 0 };
     let S = { x: 0, y: 0 };
     let H = { x: 0, y: 0 };
     let Lmax = 400;
     const pose = { x: 0, y: 0, a: 0, sag: 36 };
-    let plugged = true;
+    let plugged = false;
     let tween = 0;
     let dragging = false;
     let reconnect = 0;
