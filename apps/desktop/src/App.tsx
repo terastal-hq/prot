@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Minus, Plus, Copy, Check, X, KeyRound } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { client } from "./api";
-import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
+import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, SSHMachine, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
 import gearsIcon from "./assets/settings-gears.png";
 import "./App.css";
@@ -162,6 +162,120 @@ function Field(props: {
   );
 }
 
+/**
+ * Text box that is also a dropdown of the machines defined in ~/.ssh/config. Typing anything still works: a host
+ * the config does not know is a perfectly good value.
+ */
+function HostCombo(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hosts: string[];
+  placeholder?: string;
+  required?: boolean;
+  autoFocus?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const root = useRef<HTMLDivElement>(null);
+
+  // Offer what matches the text, or everything when the text already is one of the names.
+  const needle = props.value.trim().toLowerCase();
+  const exact = props.hosts.includes(props.value.trim());
+  const shown = props.hosts.filter((h) => exact || !needle || h.toLowerCase().includes(needle));
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const choose = (host: string) => {
+    props.onChange(host);
+    setOpen(false);
+    setActive(-1);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (props.hosts.length === 0) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActive(0);
+        return;
+      }
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      setActive((i) => Math.min(Math.max(i + dir, 0), shown.length - 1));
+    } else if (e.key === "Enter" && open && active >= 0 && shown[active]) {
+      e.preventDefault(); // choose the highlighted name instead of submitting the form
+      choose(shown[active]);
+    } else if (e.key === "Escape" && open) {
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="field select" ref={root}>
+      <label>{props.label}</label>
+      <div className="input-well">
+        <span className="prompt" aria-hidden="true">
+          {">"}
+        </span>
+        <input
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          required={props.required}
+          autoFocus={props.autoFocus}
+          placeholder={props.placeholder}
+          value={props.value}
+          onChange={(e) => {
+            props.onChange(e.target.value);
+            setActive(-1);
+            if (props.hosts.length > 0) setOpen(true);
+          }}
+          onKeyDown={onKeyDown}
+          spellCheck={false}
+        />
+        {props.hosts.length > 0 && (
+          <button
+            type="button"
+            className="combo-btn"
+            tabIndex={-1}
+            title="Machines from ~/.ssh/config"
+            aria-label="Machines from ~/.ssh/config"
+            onClick={() => setOpen((o) => !o)}
+          >
+            <ChevronDown size={14} strokeWidth={3} />
+          </button>
+        )}
+      </div>
+      {open && shown.length > 0 && (
+        <ul className="select-list" role="listbox">
+          {shown.map((h, i) => (
+            <li
+              key={h}
+              role="option"
+              aria-selected={h === props.value}
+              className={h === props.value || i === active ? "on" : ""}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(h)}
+            >
+              {h}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const inTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI__);
 
 /** Minimize and close; the OS title bar is disabled in tauri.conf.json, so the app header is the title bar. */
@@ -298,6 +412,11 @@ export function App() {
   const [tunSshPort, setTunSshPort] = useState("");
   const [tunAuto, setTunAuto] = useState(true);
   const [tunPassword, setTunPassword] = useState("");
+  // Machines from ~/.ssh/config, and what ssh resolves for the one typed in the host box.
+  const [sshHosts, setSshHosts] = useState<string[]>([]);
+  const [machine, setMachine] = useState<SSHMachine | null>(null);
+  // Values copied from the machine into the form, so they are sent only when the user changes them.
+  const prefill = useRef({ port: "", identity: "" });
 
   // Tunnel password sheet
   const [pwTunnel, setPwTunnel] = useState<TunnelStatus | null>(null);
@@ -518,6 +637,38 @@ export function App() {
     }
   };
 
+  // Offer the machines in ~/.ssh/config whenever the New Tunnel sheet opens.
+  useEffect(() => {
+    if (!showAddTunnel) return;
+    client.listSSHHosts().then(setSshHosts, () => setSshHosts([]));
+  }, [showAddTunnel, client]);
+
+  // When the host box names one of them, ask ssh what that means and prefill the matching fields.
+  const hostName = tunHost.slice(tunHost.lastIndexOf("@") + 1).trim();
+  useEffect(() => {
+    if (!sshHosts.includes(hostName)) {
+      setMachine(null);
+      return;
+    }
+    let stale = false;
+    client.resolveSSHHost(hostName).then(
+      (m) => {
+        if (stale) return;
+        setMachine(m);
+        const port = m.port && m.port !== 22 ? String(m.port) : "";
+        const identity = m.identity_files[0] ?? "";
+        // Never overwrite what the user typed: only replace empty fields or earlier prefilled values.
+        setTunSshPort((cur) => (cur === "" || cur === prefill.current.port ? port : cur));
+        setTunIdentity((cur) => (cur === "" || cur === prefill.current.identity ? identity : cur));
+        prefill.current = { port, identity };
+      },
+      () => !stale && setMachine(null),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [hostName, sshHosts, client]);
+
   const resetTunnelForm = () => {
     setTunAlias("");
     setTunHost("");
@@ -528,6 +679,8 @@ export function App() {
     setTunSshPort("");
     setTunAuto(true);
     setTunPassword("");
+    setMachine(null);
+    prefill.current = { port: "", identity: "" };
   };
 
   const handleCreateTunnel = async (e: React.FormEvent) => {
@@ -544,8 +697,10 @@ export function App() {
         remote_host: tunRemoteHost.trim() || undefined,
         remote_port: parseInt(tunRemotePort, 10),
         local_port: tunLocalPort ? parseInt(tunLocalPort, 10) : 0,
-        identity_file: tunIdentity.trim() || undefined,
-        extra_args: tunSshPort ? ["-p", String(parseInt(tunSshPort, 10))] : [],
+        // Values copied from ~/.ssh/config are left to ssh; only what the user typed or changed is passed on.
+        identity_file: tunIdentity.trim() && tunIdentity !== prefill.current.identity ? tunIdentity.trim() : undefined,
+        extra_args:
+          tunSshPort && tunSshPort !== prefill.current.port ? ["-p", String(parseInt(tunSshPort, 10))] : [],
         auto_connect: tunAuto,
         password: tunPassword || undefined,
       });
@@ -1070,7 +1225,20 @@ export function App() {
           </div>
           <div className="sheet-body">
             <Field label="Alias" required autoFocus placeholder="staging-db" prompt="@" value={tunAlias} onChange={setTunAlias} />
-            <Field label="SSH host" required placeholder="deploy@bastion.example.com" prompt=">" value={tunHost} onChange={setTunHost} />
+            <HostCombo
+              label="SSH host"
+              required
+              placeholder={sshHosts.length > 0 ? "pick a machine or type deploy@host" : "deploy@bastion.example.com"}
+              value={tunHost}
+              onChange={setTunHost}
+              hosts={sshHosts}
+            />
+            {machine && (
+              <p className="dim machine-note">
+                ~/.ssh/config: {machine.user}@{machine.hostname}:{machine.port}
+                {machine.proxy_jump ? ` via ${machine.proxy_jump}` : ""}
+              </p>
+            )}
             <div className="form-row">
               <Field label="Remote port" required type="number" placeholder="5432" prompt=":" value={tunRemotePort} onChange={setTunRemotePort} />
               <Field label="Remote host" placeholder="127.0.0.1" value={tunRemoteHost} onChange={setTunRemoteHost} />

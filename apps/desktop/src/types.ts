@@ -92,3 +92,14 @@ export interface LogEntry {
   stream: "stdout" | "stderr" | "system";
   message: string;
 }
+
+/** What ssh resolves for a machine defined in ~/.ssh/config. */
+export interface SSHMachine {
+  alias: string;
+  hostname: string;
+  user: string;
+  port: number;
+  proxy_jump?: string;
+  /** Keys the configuration names for this machine; ssh's built-in default keys are not included. */
+  identity_files: string[];
+}

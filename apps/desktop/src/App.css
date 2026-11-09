@@ -1262,6 +1262,28 @@ code {
   outline: 2px solid var(--daemon);
   outline-offset: 1px;
 }
+.combo-btn {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  margin: 0 -10px 0 0;
+  padding: 0 10px;
+  color: var(--hazard);
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--metal-lo);
+  cursor: pointer;
+}
+.combo-btn:hover {
+  color: var(--ink);
+  background: var(--gloss-orange);
+}
+.machine-note {
+  margin: -6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 .select-list {
   position: absolute;
   top: 100%;

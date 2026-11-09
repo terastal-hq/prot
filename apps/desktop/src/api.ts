@@ -1,4 +1,4 @@
-import { DaemonHealth, DiscoveredProcess, LogEntry, NewTunnel, ServiceView, TunnelStatus } from "./types";
+import { DaemonHealth, DiscoveredProcess, LogEntry, NewTunnel, ServiceView, SSHMachine, TunnelStatus } from "./types";
 
 export class ProtClient {
   private baseUrl: string;
@@ -133,6 +133,16 @@ export class ProtClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  /** Machine names defined in the user's ~/.ssh/config. */
+  async listSSHHosts(): Promise<string[]> {
+    const res = await this.request<{ hosts: string[] }>("/v1/ssh/hosts");
+    return res.hosts || [];
+  }
+
+  async resolveSSHHost(alias: string): Promise<SSHMachine> {
+    return this.request<SSHMachine>(`/v1/ssh/hosts/${encodeURIComponent(alias)}`);
   }
 
   async listTunnels(): Promise<TunnelStatus[]> {
