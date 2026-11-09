@@ -183,3 +183,60 @@ func TestRegistryRenameAlias(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestRegistryUpdateService(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "prot.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	router := proxy.NewRouter()
+	reg := New(Config{DB: db, Router: router, GatewayHost: "8080"})
+	ctx := context.Background()
+
+	if _, err := reg.RegisterService(ctx, storage.Service{
+		ID: "svc-u", Name: "U", Alias: "upd", Command: "true", Port: 9301, RestartPolicy: "on-failure",
+	}); err != nil {
+		t.Fatalf("RegisterService: %v", err)
+	}
+
+	str := func(v string) *string { return &v }
+	flag := func(v bool) *bool { return &v }
+	port := uint32(9302)
+	env := map[string]string{"A": "1"}
+
+	view, err := reg.UpdateService(ctx, "svc-u", ServicePatch{
+		Name: str(" Renamed "), Command: str("echo hi"), Cwd: str("/tmp"), Env: &env, Port: &port,
+		AutoStart: flag(true), AutoPort: flag(true), LANExposed: flag(true), RestartPolicy: str("always"),
+	})
+	if err != nil {
+		t.Fatalf("UpdateService: %v", err)
+	}
+	if view.Name != "Renamed" || view.Command != "echo hi" || view.Cwd != "/tmp" || view.Env["A"] != "1" ||
+		view.Port != 9302 || !view.AutoStart || !view.AutoPort || !view.LANExposed || view.RestartPolicy != "always" {
+		t.Errorf("fields not applied: %+v", view)
+	}
+	if rt, ok := router.Match("upd.localhost"); !ok || rt.TargetURL != "http://127.0.0.1:9302" || !rt.LANExposed {
+		t.Errorf("route not synced for stopped service: %+v", rt)
+	}
+
+	stored, _ := db.GetService(ctx, "svc-u")
+	if stored.Command != "echo hi" || !stored.AutoStart {
+		t.Errorf("not persisted: %+v", stored)
+	}
+
+	bigPort := uint32(70000)
+	bad := []ServicePatch{
+		{Name: str("  ")}, {Command: str("")}, {RestartPolicy: str("sometimes")}, {Port: &bigPort},
+		{Env: &map[string]string{"A=B": "x"}},
+	}
+	for i, p := range bad {
+		if _, err := reg.UpdateService(ctx, "svc-u", p); !errors.Is(err, ErrInvalidField) {
+			t.Errorf("case %d: expected ErrInvalidField, got %v", i, err)
+		}
+	}
+	if after, _ := db.GetService(ctx, "svc-u"); after.Name != "Renamed" {
+		t.Errorf("rejected patches must not change data: %+v", after)
+	}
+}

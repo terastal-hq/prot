@@ -63,7 +63,10 @@ paths:
         "200": { description: Service details }
         "404": { description: Not found }
     patch:
-      summary: Change a service alias (moves its .localhost route)
+      summary: Update service settings (partial; omitted fields are unchanged)
+      description: >
+        Alias, name, auto_start and lan_exposed apply immediately. Command, cwd, env, port, auto_port
+        and restart_policy are used on the next start.
       parameters:
         - name: id
           in: path
@@ -75,12 +78,20 @@ paths:
           application/json:
             schema:
               type: object
-              required: [alias]
               properties:
+                name: { type: string }
                 alias: { type: string, description: DNS label, lowercase letters/digits/hyphens }
+                command: { type: string }
+                cwd: { type: string }
+                env: { type: object, additionalProperties: { type: string } }
+                port: { type: integer, minimum: 0, maximum: 65535 }
+                auto_port: { type: boolean }
+                auto_start: { type: boolean }
+                restart_policy: { type: string, enum: [no, on-failure, always] }
+                lan_exposed: { type: boolean }
       responses:
         "200": { description: Updated service }
-        "400": { description: Invalid alias }
+        "400": { description: Invalid value }
         "404": { description: Not found }
         "409": { description: Alias already used }
     delete:

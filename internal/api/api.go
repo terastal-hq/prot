@@ -175,19 +175,17 @@ func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Alias *string `json:"alias"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Alias == nil {
-		jsonErr(w, http.StatusBadRequest, "request must be json with an alias")
+	var patch registry.ServicePatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request json")
 		return
 	}
 
-	view, err := s.reg.RenameAlias(r.Context(), r.PathValue("id"), *req.Alias)
+	view, err := s.reg.UpdateService(r.Context(), r.PathValue("id"), patch)
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		jsonErr(w, http.StatusNotFound, "service not found")
-	case errors.Is(err, registry.ErrInvalidAlias):
+	case errors.Is(err, registry.ErrInvalidAlias), errors.Is(err, registry.ErrInvalidField):
 		jsonErr(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, registry.ErrAliasTaken):
 		jsonErr(w, http.StatusConflict, err.Error())

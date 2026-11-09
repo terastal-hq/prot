@@ -284,22 +284,105 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 	return &view, nil
 }
 
-// ErrInvalidAlias is returned when an alias is not a valid DNS label.
-var ErrInvalidAlias = errors.New("alias must be 1-63 characters: lowercase letters, digits and hyphens, " +
-	"not starting or ending with a hyphen")
-
-// ErrAliasTaken is returned when another service already uses the alias.
-var ErrAliasTaken = errors.New("alias is already used by another service")
+// Validation errors returned by UpdateService.
+var (
+	// ErrInvalidAlias is returned when an alias is not a valid DNS label.
+	ErrInvalidAlias = errors.New("alias must be 1-63 characters: lowercase letters, digits and hyphens, " +
+		"not starting or ending with a hyphen")
+	// ErrAliasTaken is returned when another service already uses the alias.
+	ErrAliasTaken = errors.New("alias is already used by another service")
+	// ErrInvalidField is returned for any other rejected field value.
+	ErrInvalidField = errors.New("invalid field")
+)
 
 var aliasPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// RenameAlias changes the .localhost alias of a service and moves its live route.
-func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) (*ServiceView, error) {
-	newAlias = strings.ToLower(strings.TrimSpace(newAlias))
-	if !aliasPattern.MatchString(newAlias) {
-		return nil, ErrInvalidAlias
-	}
+// ServicePatch holds optional changes to a service; nil fields are left untouched.
+type ServicePatch struct {
+	Name          *string            `json:"name"`
+	Alias         *string            `json:"alias"`
+	Command       *string            `json:"command"`
+	Cwd           *string            `json:"cwd"`
+	Env           *map[string]string `json:"env"`
+	Port          *uint32            `json:"port"`
+	AutoPort      *bool              `json:"auto_port"`
+	AutoStart     *bool              `json:"auto_start"`
+	RestartPolicy *string            `json:"restart_policy"`
+	LANExposed    *bool              `json:"lan_exposed"`
+}
 
+func invalidField(format string, args ...interface{}) error {
+	return fmt.Errorf("%w: %s", ErrInvalidField, fmt.Sprintf(format, args...))
+}
+
+// applyPatch validates patch and applies it to svc in place.
+func applyPatch(svc *storage.Service, patch ServicePatch, others []storage.Service) error {
+	if patch.Name != nil {
+		name := strings.TrimSpace(*patch.Name)
+		if name == "" {
+			return invalidField("name cannot be empty")
+		}
+		svc.Name = name
+	}
+	if patch.Alias != nil {
+		alias := strings.ToLower(strings.TrimSpace(*patch.Alias))
+		if !aliasPattern.MatchString(alias) {
+			return ErrInvalidAlias
+		}
+		for _, o := range others {
+			if o.ID != svc.ID && o.Alias == alias {
+				return ErrAliasTaken
+			}
+		}
+		svc.Alias = alias
+	}
+	if patch.Command != nil {
+		cmd := strings.TrimSpace(*patch.Command)
+		if cmd == "" && svc.Command != "" {
+			return invalidField("command cannot be empty")
+		}
+		svc.Command = cmd
+	}
+	if patch.Cwd != nil {
+		svc.Cwd = strings.TrimSpace(*patch.Cwd)
+	}
+	if patch.Env != nil {
+		for k := range *patch.Env {
+			if k == "" || strings.ContainsAny(k, "= \t\n") {
+				return invalidField("invalid environment variable name %q", k)
+			}
+		}
+		svc.Env = *patch.Env
+	}
+	if patch.Port != nil {
+		if *patch.Port > 65535 {
+			return invalidField("port must be between 0 and 65535")
+		}
+		svc.Port = *patch.Port
+	}
+	if patch.RestartPolicy != nil {
+		switch *patch.RestartPolicy {
+		case "no", "on-failure", "always":
+			svc.RestartPolicy = *patch.RestartPolicy
+		default:
+			return invalidField("restart_policy must be no, on-failure or always")
+		}
+	}
+	if patch.AutoPort != nil {
+		svc.AutoPort = *patch.AutoPort
+	}
+	if patch.AutoStart != nil {
+		svc.AutoStart = *patch.AutoStart
+	}
+	if patch.LANExposed != nil {
+		svc.LANExposed = *patch.LANExposed
+	}
+	return nil
+}
+
+// UpdateService validates and applies a partial update, keeps the live route in sync and broadcasts the result.
+// Changes to the command, port, working directory, environment and restart policy take effect on the next start.
+func (r *Registry) UpdateService(ctx context.Context, idOrAlias string, patch ServicePatch) (*ServiceView, error) {
 	id, err := r.resolveServiceID(ctx, idOrAlias)
 	if err != nil {
 		return nil, err
@@ -308,29 +391,21 @@ func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) 
 	if err != nil {
 		return nil, err
 	}
-
 	all, err := r.db.ListServices(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, other := range all {
-		if other.ID != id && other.Alias == newAlias {
-			return nil, ErrAliasTaken
-		}
-	}
 
 	oldAlias := svc.Alias
-	if oldAlias != newAlias {
-		svc.Alias = newAlias
-		if err := r.db.SaveService(ctx, *svc); err != nil {
-			return nil, fmt.Errorf("saving service: %w", err)
-		}
-		if rt, ok := r.router.GetRoute(oldAlias); ok {
-			r.router.RemoveRoute(oldAlias)
-			_ = r.router.SetRoute(newAlias, rt.TargetURL, rt.LANExposed)
-		}
-		_ = r.db.LogEvent(ctx, "service.renamed", id, fmt.Sprintf(`{"from": %q, "to": %q}`, oldAlias, newAlias))
+	if err := applyPatch(svc, patch, all); err != nil {
+		return nil, err
 	}
+	if err := r.db.SaveService(ctx, *svc); err != nil {
+		return nil, fmt.Errorf("saving service: %w", err)
+	}
+
+	r.syncRoute(oldAlias, svc)
+	_ = r.db.LogEvent(ctx, "service.updated", id, "{}")
 
 	view := r.toServiceView(*svc)
 	r.Broadcast(Event{
@@ -340,6 +415,28 @@ func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) 
 		Data:      view,
 	})
 	return &view, nil
+}
+
+// syncRoute moves an existing route to the service's current alias and LAN setting. A stopped service
+// also follows its configured port; a live one keeps its target until the next restart.
+func (r *Registry) syncRoute(oldAlias string, svc *storage.Service) {
+	rt, ok := r.router.GetRoute(oldAlias)
+	if !ok {
+		return
+	}
+	target := rt.TargetURL
+	if _, running := r.supervisor.GetState(svc.ID); !running && svc.Port > 0 {
+		target = fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
+	}
+	if oldAlias != svc.Alias {
+		r.router.RemoveRoute(oldAlias)
+	}
+	_ = r.router.SetRoute(svc.Alias, target, svc.LANExposed)
+}
+
+// RenameAlias changes only the .localhost alias of a service.
+func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) (*ServiceView, error) {
+	return r.UpdateService(ctx, idOrAlias, ServicePatch{Alias: &newAlias})
 }
 
 func (r *Registry) resolveServiceID(ctx context.Context, idOrAlias string) (string, error) {

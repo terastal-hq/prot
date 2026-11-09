@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Plus, Copy, Check, X } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, Plus, Copy, Check, X } from "lucide-react";
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
@@ -45,6 +45,59 @@ function urlSuffix(s: ServiceView) {
   const url = s.canonical_url || `http://${s.alias}.localhost`;
   const i = url.indexOf(s.alias);
   return i >= 0 ? url.slice(i + s.alias.length) : ".localhost";
+}
+
+type EditForm = {
+  id: string;
+  name: string;
+  command: string;
+  cwd: string;
+  port: string;
+  autoPort: boolean;
+  autoStart: boolean;
+  restartPolicy: string;
+  lanExposed: boolean;
+  env: string;
+};
+
+const RESTART_POLICIES = [
+  { value: "no", label: "Never" },
+  { value: "on-failure", label: "On failure" },
+  { value: "always", label: "Always" },
+];
+
+function envToText(env?: Record<string, string>) {
+  return Object.entries(env ?? {})
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+}
+
+/** Parses KEY=value lines; throws with the offending line number on bad input. */
+function textToEnv(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  text.split("\n").forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) return;
+    const eq = line.indexOf("=");
+    if (eq < 1) throw new Error(`Environment line ${i + 1} must look like KEY=value`);
+    env[line.slice(0, eq).trim()] = line.slice(eq + 1);
+  });
+  return env;
+}
+
+function toEditForm(s: ServiceView): EditForm {
+  return {
+    id: s.id,
+    name: s.name,
+    command: s.command ?? "",
+    cwd: s.cwd ?? "",
+    port: s.port > 0 ? String(s.port) : "",
+    autoPort: s.auto_port,
+    autoStart: s.auto_start,
+    restartPolicy: s.restart_policy || "on-failure",
+    lanExposed: s.lan_exposed,
+    env: envToText(s.env),
+  };
 }
 
 function GearIcon() {
@@ -142,6 +195,8 @@ export function App() {
   const [adminUrl, setAdminUrl] = useState(client.getBaseUrl());
   const [authToken, setAuthToken] = useState(client.getToken());
   const [editingAlias, setEditingAlias] = useState<{ id: string; value: string } | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [pendingRestart, setPendingRestart] = useState<Set<string>>(new Set());
   const [copiedMCP, setCopiedMCP] = useState(false);
 
   const notify = useCallback((text: string, ok = false) => {
@@ -215,6 +270,59 @@ export function App() {
       setEditingAlias(null);
       await refreshData();
       notify(`Now at ${alias}.localhost`, true);
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  const clearPending = (id: string) =>
+    setPendingRestart((cur) => {
+      if (!cur.has(id)) return cur;
+      const next = new Set(cur);
+      next.delete(id);
+      return next;
+    });
+
+  const runLifecycle = (id: string, action: () => Promise<unknown>) => {
+    clearPending(id);
+    return run(action);
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const f = editForm;
+    const orig = services.find((x) => x.id === f?.id);
+    if (!f || !orig) return;
+    try {
+      const env = textToEnv(f.env);
+      const port = f.port.trim() === "" ? 0 : Number(f.port);
+      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Port must be 0-65535");
+      // With auto-port the shown port is the live ephemeral one, so only send it if the user edited it.
+      const portChanged = f.port !== toEditForm(orig).port;
+      await client.updateService(f.id, {
+        name: f.name,
+        command: f.command,
+        cwd: f.cwd,
+        env,
+        ...(portChanged ? { port } : {}),
+        auto_port: f.autoPort,
+        auto_start: f.autoStart,
+        restart_policy: f.restartPolicy,
+        lan_exposed: f.lanExposed,
+      });
+      const live = orig.status === "running" || orig.status === "starting" || orig.status === "unhealthy";
+      const needsRestart =
+        live &&
+        (f.command.trim() !== (orig.command ?? "") ||
+          f.cwd.trim() !== (orig.cwd ?? "") ||
+          envToText(env) !== envToText(orig.env) ||
+          portChanged ||
+          f.autoPort !== orig.auto_port ||
+          f.restartPolicy !== orig.restart_policy);
+      if (needsRestart) setPendingRestart((cur) => new Set(cur).add(f.id));
+      setEditForm(null);
+      await refreshData();
+      notify(needsRestart ? "Saved. Restart to apply." : "Saved", true);
     } catch (err) {
       fail(err);
     }
@@ -426,21 +534,36 @@ export function App() {
                         </button>
                       </div>
                     )}
+                    {pendingRestart.has(s.id) && (
+                      <div className="restart-note">
+                        <span>Changes pending. Restart to apply.</span>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => runLifecycle(s.id, () => client.restartService(s.id))}
+                        >
+                          Restart
+                        </button>
+                      </div>
+                    )}
                     <div className="card-actions">
                       {s.status === "running" ? (
-                        <button className="icon-btn danger" title="Stop" onClick={() => run(() => client.stopService(s.id))}>
+                        <button className="icon-btn danger" title="Stop" onClick={() => runLifecycle(s.id, () => client.stopService(s.id))}>
                           <Square size={14} strokeWidth={2.5} />
                         </button>
                       ) : (
-                        <button className="icon-btn go" title="Start" onClick={() => run(() => client.startService(s.id))}>
+                        <button className="icon-btn go" title="Start" onClick={() => runLifecycle(s.id, () => client.startService(s.id))}>
                           <Play size={14} strokeWidth={2.5} />
                         </button>
                       )}
-                      <button className="icon-btn" title="Restart" onClick={() => run(() => client.restartService(s.id))}>
+                      <button className="icon-btn" title="Restart" onClick={() => runLifecycle(s.id, () => client.restartService(s.id))}>
                         <RotateCw size={14} strokeWidth={2.5} />
                       </button>
                       <button className="icon-btn" title="Logs" onClick={() => setLogService(s)}>
                         <Terminal size={14} strokeWidth={2.5} />
+                      </button>
+                      <button className="icon-btn" title="Edit server settings" onClick={() => setEditForm(toEditForm(s))}>
+                        <Settings2 size={14} strokeWidth={2.5} />
                       </button>
                       <span className="spacer" />
                       <button
@@ -675,6 +798,112 @@ export function App() {
             </button>
             <button type="submit" className="btn btn-primary">
               Create
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Edit server sheet */}
+      {editForm && (
+        <form className="sheet" onSubmit={handleEditSave}>
+          <div className="sheet-head">
+            <h2>edit server</h2>
+            <button type="button" className="icon-btn" onClick={() => setEditForm(null)} aria-label="Close">
+              <X size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="sheet-body">
+            <Field
+              label="Name"
+              required
+              autoFocus
+              value={editForm.name}
+              onChange={(v) => setEditForm({ ...editForm, name: v })}
+            />
+            <Field
+              label="Command"
+              required
+              placeholder="pnpm dev"
+              value={editForm.command}
+              onChange={(v) => setEditForm({ ...editForm, command: v })}
+            />
+            <Field
+              label="Working dir"
+              placeholder="/path/to/project"
+              prompt="/"
+              value={editForm.cwd}
+              onChange={(v) => setEditForm({ ...editForm, cwd: v })}
+            />
+            <div className="form-row">
+              <Field
+                label="Port"
+                type="number"
+                placeholder="3000"
+                prompt=":"
+                value={editForm.port}
+                onChange={(v) => setEditForm({ ...editForm, port: v })}
+              />
+              <div className="field">
+                <label htmlFor="restart-policy">Restart</label>
+                <div className="input-well">
+                  <select
+                    id="restart-policy"
+                    value={editForm.restartPolicy}
+                    onChange={(e) => setEditForm({ ...editForm, restartPolicy: e.target.value })}
+                  >
+                    {RESTART_POLICIES.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="env-text">Environment</label>
+              <div className="input-well">
+                <textarea
+                  id="env-text"
+                  rows={4}
+                  placeholder={"KEY=value\nNODE_ENV=development"}
+                  value={editForm.env}
+                  spellCheck={false}
+                  onChange={(e) => setEditForm({ ...editForm, env: e.target.value })}
+                />
+              </div>
+            </div>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={editForm.autoStart}
+                onChange={(e) => setEditForm({ ...editForm, autoStart: e.target.checked })}
+              />
+              Start automatically when protd starts
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={editForm.autoPort}
+                onChange={(e) => setEditForm({ ...editForm, autoPort: e.target.checked })}
+              />
+              Assign a free port automatically (passed as $PORT)
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={editForm.lanExposed}
+                onChange={(e) => setEditForm({ ...editForm, lanExposed: e.target.checked })}
+              />
+              Allow access from other devices on the network
+            </label>
+          </div>
+          <div className="sheet-foot">
+            <button type="button" className="btn" onClick={() => setEditForm(null)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
             </button>
           </div>
         </form>

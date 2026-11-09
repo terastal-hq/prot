@@ -1106,3 +1106,58 @@ code {
     display: none;
   }
 }
+
+/* select + textarea inside an input well */
+.input-well select,
+.input-well textarea {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--daemon);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-shadow: 0 0 5px rgba(90, 244, 81, 0.4);
+  user-select: text;
+}
+.input-well select {
+  min-height: 32px;
+  cursor: pointer;
+  appearance: none;
+  padding-right: 22px;
+  background: transparent
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23fb8808' stroke-width='2.5'/></svg>")
+    no-repeat right 2px center;
+}
+.input-well select option {
+  background: #000;
+  color: var(--daemon);
+}
+.input-well textarea {
+  padding: 8px 0;
+  resize: vertical;
+  line-height: 1.5;
+}
+.input-well textarea::placeholder {
+  color: #4a5249;
+  text-shadow: none;
+}
+
+/* shown on a card after a restart-only setting was changed on a live server */
+.restart-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--stripe);
+  border: 2px solid var(--ink);
+}
+.restart-note > span {
+  padding: 2px 6px;
+  background: var(--gold);
+}
