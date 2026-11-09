@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -58,10 +59,19 @@ type supervisedTunnel struct {
 
 // Manager supervises and monitors OpenSSH forwarding tunnels.
 type Manager struct {
-	mu      sync.RWMutex
-	tunnels map[string]*supervisedTunnel
-	sshPath string
+	mu           sync.RWMutex
+	tunnels      map[string]*supervisedTunnel
+	sshPath      string
+	readyTimeout time.Duration // how long to wait for the local forward to open
 }
+
+// Timing for tunnel supervision.
+const (
+	defaultReadyTimeout = 3 * time.Second
+	initialBackoff      = 500 * time.Millisecond
+	maxBackoff          = 15 * time.Second
+	stableConnection    = 30 * time.Second // a connection this long resets the reconnect backoff
+)
 
 // NewManager constructs a new SSH tunnel supervisor.
 func NewManager() (*Manager, error) {
@@ -69,10 +79,15 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ssh binary not found in PATH: %w", err)
 	}
+	return newManager(sshPath), nil
+}
+
+func newManager(sshPath string) *Manager {
 	return &Manager{
-		tunnels: make(map[string]*supervisedTunnel),
-		sshPath: sshPath,
-	}, nil
+		tunnels:      make(map[string]*supervisedTunnel),
+		sshPath:      sshPath,
+		readyTimeout: defaultReadyTimeout,
+	}
 }
 
 // Register registers a tunnel configuration.
@@ -82,6 +97,10 @@ func (m *Manager) Register(cfg TunnelConfig) (*TunnelStatus, error) {
 	}
 	if cfg.SSHHost == "" {
 		return nil, errors.New("ssh_host is required")
+	}
+	// ssh would parse a leading "-" as an option (for example -oProxyCommand=...), not a destination.
+	if strings.HasPrefix(cfg.SSHHost, "-") || strings.HasPrefix(cfg.SSHUser, "-") {
+		return nil, errors.New("ssh_host and ssh_user must not start with '-'")
 	}
 	if cfg.RemoteHost == "" {
 		cfg.RemoteHost = "127.0.0.1"
@@ -187,14 +206,11 @@ func (m *Manager) List() []TunnelStatus {
 }
 
 func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
-	backoff := 500 * time.Millisecond
-	maxBackoff := 15 * time.Second
+	backoff := initialBackoff
 
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 
 		m.mu.RLock()
@@ -204,9 +220,13 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 			return
 		}
 
+		began := time.Now()
 		err := m.runOnce(ctx, st)
 		if err == nil || ctx.Err() != nil {
 			return
+		}
+		if time.Since(began) >= stableConnection {
+			backoff = initialBackoff
 		}
 
 		m.mu.Lock()
@@ -217,10 +237,7 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 
 		select {
 		case <-time.After(backoff):
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
+			backoff = min(backoff*2, maxBackoff)
 		case <-ctx.Done():
 			return
 		}
@@ -270,32 +287,60 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 	st.status.AssignedLocalPort = localPort
 	st.status.PID = cmd.Process.Pid
 	m.mu.Unlock()
+	defer m.clearProcess(st)
 
-	// Wait for local port readiness (up to 3 seconds)
-	ready := netutil.WaitForPort(ctx, localPort, 3*time.Second)
-	if !ready {
-		// Check if process exited early
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-			return fmt.Errorf("ssh exited prematurely with code %d", cmd.ProcessState.ExitCode())
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
+	// Only report "connected" once the local forward really accepts connections. ssh exiting first (bad host,
+	// refused auth, port already taken) or the port never opening is a failed attempt to retry.
+	readyCtx, cancelReady := context.WithTimeout(ctx, m.readyTimeout)
+	defer cancelReady()
+	ready := make(chan bool, 1)
+	go func() { ready <- netutil.WaitForPort(readyCtx, localPort, m.readyTimeout) }()
+
+	select {
+	case err := <-exited:
+		return fmt.Errorf("ssh exited before the tunnel was ready: %w", exitReason(err))
+	case ok := <-ready:
+		if !ok {
+			_ = cmd.Process.Kill()
+			<-exited
+			if ctx.Err() != nil {
+				return nil // stopped while connecting
+			}
+			return fmt.Errorf("local port %d did not open within %s", localPort, m.readyTimeout)
 		}
 	}
 
 	now := time.Now().UTC()
 	m.mu.Lock()
-	st.status.State = StateConnected
-	st.status.ConnectedAt = &now
+	if ctx.Err() == nil { // Stop may have run while we waited; do not resurrect a stopped tunnel
+		st.status.State = StateConnected
+		st.status.ConnectedAt = &now
+	}
 	m.mu.Unlock()
 
-	// Wait for ssh process to terminate
-	err := cmd.Wait()
-
-	m.mu.Lock()
-	st.status.PID = 0
-	st.status.ConnectedAt = nil
-	m.mu.Unlock()
-
+	err := <-exited
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("ssh session ended: %w", err)
 	}
 	return nil
+}
+
+// clearProcess forgets the finished ssh process.
+func (m *Manager) clearProcess(st *supervisedTunnel) {
+	m.mu.Lock()
+	st.status.PID = 0
+	st.status.ConnectedAt = nil
+	st.cmd = nil
+	m.mu.Unlock()
+}
+
+// exitReason describes an ssh exit that returned no Go error (a clean exit 0) as such.
+func exitReason(err error) error {
+	if err == nil {
+		return errors.New("exit status 0")
+	}
+	return err
 }
