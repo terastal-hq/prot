@@ -101,19 +101,37 @@ key: prefer `ssh-copy-id` and a key when you can.
 | :--- | :--- |
 | `prot tunnel add <alias> --host [user@]host --remote-port N` | Save a tunnel |
 | `prot tunnel ls [--json]` | List tunnels, their state, local port and address |
+| `prot tunnel edit <id_or_alias> [options]` | Change a saved tunnel in place (see below) |
 | `prot tunnel start <id_or_alias> [--no-wait]` | Connect, and wait until it is reachable |
 | `prot tunnel stop <id_or_alias>` | Disconnect (returns once `ssh` has exited) |
 | `prot tunnel rm <id_or_alias>` | Disconnect and delete |
-
 | `prot tunnel password <id_or_alias> [--stdin \| --clear]` | Set, replace or remove the stored password |
 
 `add` options: `--user`, `--remote-host` (default `127.0.0.1`), `--local-port` (default: a free port each time),
 `--identity`, `--ssh-port`, repeatable `--ssh-arg` for any other `ssh` argument, `--password` /
 `--password-stdin`, and `--auto-connect`.
 
-The desktop app's Tunnels tab does the same with a form. Agents get `list_tunnels`, `start_tunnel` and
+### Editing a tunnel
+
+```bash
+prot tunnel edit db --remote-port 6000                 # change one thing; the rest stays as it is
+prot tunnel edit db --alias warehouse --host prod-db   # rename it and point it at a machine from ~/.ssh/config
+prot tunnel edit db --user "" --identity ""            # an empty value clears an optional field
+```
+
+`edit` takes the same options as `add` (`--alias`, `--host`, `--user`, `--remote-host`, `--remote-port`,
+`--local-port`, `--identity`, `--ssh-port`, `--ssh-arg`, `--auto-connect[=false]`), and only what you give changes.
+`--ssh-port` changes just the port; `--ssh-arg` replaces the other extra `ssh` arguments and keeps the port unless you
+also change it. The id and the stored password stay (the password has its own command).
+
+A tunnel that was connecting, connected or retrying is reconnected with the new settings, so the change takes effect
+straight away; a stopped one stays stopped and uses them the next time it connects. An edit that changes nothing
+does not touch a live connection. A refused edit (an alias that is taken, a missing remote port, ...) changes
+nothing and leaves the connection up. Renaming moves the `.localhost` address: the old name stops resolving.
+
+The desktop app's Tunnels tab does the same with a form, and the settings button on a tunnel's card edits it. Agents get `list_tunnels`, `start_tunnel` and
 `stop_tunnel` over MCP; they see `has_password` but can never read or set a password. There is deliberately no MCP
-tool to create a tunnel: that would let an agent open an SSH connection to an arbitrary host.
+tool to create or edit a tunnel: that would let an agent open an SSH connection to an arbitrary host.
 
 ## How it behaves
 
@@ -142,7 +160,7 @@ fail with `address already in use`; stop the leftover with `pkill -f 'ssh -N -L'
 ## REST API
 
 `GET/POST /v1/tunnels`, `DELETE /v1/tunnels/{id}`, `POST /v1/tunnels/{id}/start`, `POST /v1/tunnels/{id}/stop`,
-`PUT/DELETE /v1/tunnels/{id}/password`, and for the machines in `~/.ssh/config` `GET /v1/ssh/hosts` and
+`PATCH /v1/tunnels/{id}` (edit; only the fields in the body change), `PUT/DELETE /v1/tunnels/{id}/password`, and for the machines in `~/.ssh/config` `GET /v1/ssh/hosts` and
 `GET /v1/ssh/hosts/{alias}`. `{id}` is the tunnel's id or its alias. `POST` accepts an optional
 write-only `password`. Errors use the usual statuses: 400 invalid alias, field or password, 404 unknown tunnel,
 409 alias already used, 501 when `ssh` is not installed or a password was given without a keyring. See

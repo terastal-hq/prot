@@ -130,7 +130,7 @@ Tools that target a service take `id_or_alias`.
 - `ensure_running`: Idempotently start a required service if not running.
 - `start_service`, `stop_service`, `restart_service`: Process controls.
 - `set_alias`: Change a service's `.localhost` alias (takes `id_or_alias` and `alias`).
-- `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels (agents cannot create them).
+- `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels (agents cannot create or edit them).
 
 <img src="docs/assets/headings/documentation.svg" alt="Documentation" />
 
