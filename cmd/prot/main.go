@@ -946,14 +946,20 @@ func cmdUpdate(args []string) {
 		os.Exit(1)
 	}
 
+	wantSum, err := updater.ExpectedChecksum(ctx, rel, asset.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Printf("Downloading %s (%d bytes)...\n", asset.Name, asset.Size)
-	protBytes, protdBytes, err := updater.DownloadAsset(ctx, asset.DownloadURL)
+	protBytes, protdBytes, err := updater.DownloadAsset(ctx, asset.DownloadURL, wantSum)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Applying update in-place...")
+	fmt.Println("Checksum verified. Applying update in-place...")
 	if err := updater.ApplyUpdate(protBytes, protdBytes, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to apply update: %v\n", err)
 		os.Exit(1)

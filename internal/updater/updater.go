@@ -2,8 +2,11 @@ package updater
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,26 +93,110 @@ func CheckUpdate(ctx context.Context, repo, currentVersion string) (*ReleaseInfo
 	return rel, hasUpdate, nil
 }
 
-// DownloadAsset downloads and extracts the prot and protd binaries from the release archive.
-func DownloadAsset(ctx context.Context, downloadURL string) ([]byte, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+// Limits that keep a hostile or broken download from exhausting memory.
+const (
+	maxArchiveBytes   = 200 << 20 // compressed release archive
+	maxBinaryBytes    = 200 << 20 // a single extracted binary
+	maxChecksumsBytes = 1 << 20
+)
+
+// ChecksumsAssetName is the checksum manifest GoReleaser publishes with every release.
+const ChecksumsAssetName = "checksums.txt"
+
+// ErrChecksumMismatch is returned when a download does not match its published SHA-256.
+var ErrChecksumMismatch = errors.New("checksum mismatch")
+
+// ExpectedChecksum returns the published SHA-256 (lower-case hex) of the named release asset. Updating fails
+// closed: a release without a checksum manifest, or without an entry for the asset, cannot be installed.
+func ExpectedChecksum(ctx context.Context, rel *ReleaseInfo, assetName string) (string, error) {
+	var manifest *AssetInfo
+	for i := range rel.Assets {
+		if rel.Assets[i].Name == ChecksumsAssetName {
+			manifest = &rel.Assets[i]
+			break
+		}
+	}
+	if manifest == nil {
+		return "", fmt.Errorf(
+			"release %s has no %s, refusing to install unverified binaries",
+			rel.TagName,
+			ChecksumsAssetName,
+		)
+	}
+
+	data, err := httpGetLimited(ctx, manifest.DownloadURL, maxChecksumsBytes, 15*time.Second)
 	if err != nil {
-		return nil, nil, err
+		return "", fmt.Errorf("downloading %s: %w", ChecksumsAssetName, err)
+	}
+	return parseChecksum(data, assetName)
+}
+
+// parseChecksum finds assetName in a "sha256sum"-style manifest ("<hex>  <name>" per line).
+func parseChecksum(manifest []byte, assetName string) (string, error) {
+	for _, line := range strings.Split(string(manifest), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || strings.TrimPrefix(fields[1], "*") != assetName {
+			continue
+		}
+		sum := strings.ToLower(fields[0])
+		if decoded, err := hex.DecodeString(sum); err != nil || len(decoded) != sha256.Size {
+			return "", fmt.Errorf("malformed checksum for %q in %s", assetName, ChecksumsAssetName)
+		}
+		return sum, nil
+	}
+	return "", fmt.Errorf("%s has no entry for %q", ChecksumsAssetName, assetName)
+}
+
+// httpGetLimited downloads url into memory, failing if the body exceeds limit bytes.
+func httpGetLimited(ctx context.Context, url string, limit int64, timeout time.Duration) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "prot-updater")
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("downloading release archive: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("download exceeds the %d byte limit", limit)
+	}
+	return data, nil
+}
+
+// DownloadAsset downloads the release archive, verifies it against expectedSHA256 and only then extracts the
+// prot and protd binaries. Nothing from an unverified archive is ever decompressed.
+func DownloadAsset(ctx context.Context, downloadURL, expectedSHA256 string) ([]byte, []byte, error) {
+	if expectedSHA256 == "" {
+		return nil, nil, errors.New("expected checksum is required")
 	}
 
-	gzReader, err := gzip.NewReader(resp.Body)
+	archive, err := httpGetLimited(ctx, downloadURL, maxArchiveBytes, 2*time.Minute)
+	if err != nil {
+		return nil, nil, fmt.Errorf("downloading release archive: %w", err)
+	}
+
+	sum := sha256.Sum256(archive)
+	if got := hex.EncodeToString(sum[:]); got != strings.ToLower(expectedSHA256) {
+		return nil, nil, fmt.Errorf("%w: archive is %s, expected %s", ErrChecksumMismatch, got, expectedSHA256)
+	}
+
+	return extractBinaries(archive)
+}
+
+func extractBinaries(archive []byte) ([]byte, []byte, error) {
+	gzReader, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, nil, fmt.Errorf("decompressing gzip archive: %w", err)
 	}
@@ -127,19 +214,16 @@ func DownloadAsset(ctx context.Context, downloadURL string) ([]byte, []byte, err
 			return nil, nil, fmt.Errorf("reading tar archive: %w", err)
 		}
 
-		baseName := filepath.Base(header.Name)
-		if baseName == "prot" || baseName == "prot.exe" {
-			data, err := io.ReadAll(tarReader)
-			if err != nil {
-				return nil, nil, fmt.Errorf("extracting prot binary: %w", err)
-			}
-			protData = data
-		} else if baseName == "protd" || baseName == "protd.exe" {
-			data, err := io.ReadAll(tarReader)
-			if err != nil {
-				return nil, nil, fmt.Errorf("extracting protd binary: %w", err)
-			}
-			protdData = data
+		switch filepath.Base(header.Name) {
+		case "prot", "prot.exe":
+			protData, err = readBinary(tarReader, "prot")
+		case "protd", "protd.exe":
+			protdData, err = readBinary(tarReader, "protd")
+		default:
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -149,8 +233,18 @@ func DownloadAsset(ctx context.Context, downloadURL string) ([]byte, []byte, err
 	if len(protdData) == 0 {
 		return nil, nil, errors.New("protd binary not found in release archive")
 	}
-
 	return protData, protdData, nil
+}
+
+func readBinary(r io.Reader, name string) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxBinaryBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("extracting %s binary: %w", name, err)
+	}
+	if int64(len(data)) > maxBinaryBytes {
+		return nil, fmt.Errorf("%s binary exceeds the %d byte limit", name, maxBinaryBytes)
+	}
+	return data, nil
 }
 
 // ApplyUpdate writes the new binaries atomically using rename to avoid ETXTBSY.
