@@ -52,12 +52,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Pick release notes
+        id: notes
+        run: |
+          # Hand-written notes live in docs/releases/<tag>.md; without them GoReleaser falls back to the commit list.
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "args=--release-notes=$f" >> "$GITHUB_OUTPUT"; else echo "args=" >> "$GITHUB_OUTPUT"; fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -115,6 +122,35 @@ jobs:
           releaseDraft: false
           prerelease: false
           projectPath: "apps/desktop"
+
+  release-notes:
+    name: Set release notes
+    # The desktop build creates or updates the same release with a placeholder body, so the notes are written last.
+    needs: [release-go, release-desktop]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply docs/releases/<tag>.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$f" --title "prot ${GITHUB_REF_NAME}"
+          else
+            echo "no $f; leaving the generated notes"
+          fi
+
+  publish-site:
+    name: Deploy website
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
 
   publish-aur:
     name: Publish AUR packages
