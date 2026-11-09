@@ -645,8 +645,6 @@ func cmdDoctor(args []string) {
 	switch runtime.GOOS {
 	case "linux", "darwin":
 		fmt.Println("      Tier 1 (Full Support): All discovery, proxy, and tunnel features supported.")
-	case "windows":
-		fmt.Println("      Not supported: the supervisor and tunnels need a Unix-like OS for now.")
 	default:
 		fmt.Printf("      Untested platform: %s\n", runtime.GOOS)
 	}

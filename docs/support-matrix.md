@@ -11,7 +11,6 @@
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Linux** | `amd64`, `arm64` | **Tier 1** | Primary target (Validated) | Native (`/proc`, `gopsutil`) | Go `net/http` (8080 unprivileged, 80 with auth) | OpenSSH child process | `systemd` user service |
 | **macOS** | `arm64` (Apple Silicon), `amd64` | **Tier 1** | Primary target | Native (`sysctl`, `gopsutil`) | Go `net/http` (8080 unprivileged, 80 with pf/auth) | OpenSSH child process | `launchd` user agent |
-| **Windows** | `x86_64` | **Not supported yet** | The supervisor and tunnels need a Unix-like OS, and no Windows binaries are released | | | | |
 
 ---
 

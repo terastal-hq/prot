@@ -3,7 +3,7 @@
 # Regenerate every app icon from the single source of truth: design/icon.png
 #
 # Outputs:
-#   apps/desktop/src-tauri/icons/       Tauri bundle + window icons (png, icns, ico)
+#   apps/desktop/src-tauri/icons/       Tauri bundle + window icons (png, icns)
 #   packaging/linux/icons/<N>x<N>/      hicolor sizes for the Linux .desktop entry
 #
 # Requires: python3 with Pillow, and npm dependencies installed in apps/desktop.
@@ -38,7 +38,7 @@ EOF
 # 2. Tauri icon set.
 (cd "$ROOT_DIR/apps/desktop" && npx --no-install tauri icon "$TMP_DIR/square.png" --output "$TMP_DIR/tauri" >/dev/null 2>&1)
 mkdir -p "$TAURI_ICONS"
-for f in 32x32.png 128x128.png "128x128@2x.png" icon.png icon.icns icon.ico; do
+for f in 32x32.png 128x128.png "128x128@2x.png" icon.png icon.icns; do
     cp -f "$TMP_DIR/tauri/$f" "$TAURI_ICONS/$f"
 done
 

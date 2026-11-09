@@ -215,9 +215,9 @@ func extractBinaries(archive []byte) ([]byte, []byte, error) {
 		}
 
 		switch filepath.Base(header.Name) {
-		case "prot", "prot.exe":
+		case "prot":
 			protData, err = readBinary(tarReader, "prot")
-		case "protd", "protd.exe":
+		case "protd":
 			protdData, err = readBinary(tarReader, "protd")
 		default:
 			continue
