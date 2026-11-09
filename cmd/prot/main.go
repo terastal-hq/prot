@@ -908,6 +908,13 @@ func cmdUpdate(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	owner := updater.PackageOwner(ctx)
+	if owner != nil && !checkOnly {
+		fmt.Fprintln(os.Stderr, owner.Message())
+		fmt.Fprintln(os.Stderr, owner.UpdateHint())
+		os.Exit(1)
+	}
+
 	fmt.Println("Checking for updates...")
 	rel, hasUpdate, err := updater.CheckUpdate(ctx, "", daemon.Version)
 	if err != nil {
@@ -922,7 +929,12 @@ func cmdUpdate(args []string) {
 	if checkOnly {
 		if hasUpdate {
 			fmt.Printf("Update available: %s (current: %s)\n", rel.TagName, daemon.Version)
-			fmt.Println("Run 'prot update' to upgrade.")
+			if owner != nil {
+				fmt.Println(owner.Message())
+				fmt.Println(owner.UpdateHint())
+			} else {
+				fmt.Println("Run 'prot update' to upgrade.")
+			}
 		} else {
 			fmt.Printf("prot is up to date (version %s)\n", daemon.Version)
 		}

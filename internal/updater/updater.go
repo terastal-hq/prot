@@ -156,6 +156,9 @@ func DownloadAsset(ctx context.Context, downloadURL string) ([]byte, []byte, err
 // ApplyUpdate writes the new binaries atomically using rename to avoid ETXTBSY.
 func ApplyUpdate(protBytes, protdBytes []byte, targetDir string) error {
 	if targetDir == "" {
+		if owner := PackageOwner(context.Background()); owner != nil {
+			return fmt.Errorf("%w (%s package %q)", ErrPackageManaged, owner.Manager, owner.Package)
+		}
 		execPath, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("resolving executable path: %w", err)

@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -111,5 +113,50 @@ func TestDownloadAndExtractAsset(t *testing.T) {
 	}
 	if string(protdBytes) != "binary data protd" {
 		t.Errorf("unexpected protdBytes: %s", protdBytes)
+	}
+}
+
+func TestPackageOwnerOf(t *testing.T) {
+	orig := runCommand
+	defer func() { runCommand = orig }()
+
+	fake := func(out string, err error) {
+		runCommand = func(_ context.Context, _ string, _ ...string) (string, error) { return out, err }
+	}
+
+	// Whichever manager is installed on the test machine is the one the fake answers for.
+	fake("prot", nil)
+	if o := packageOwnerOf(context.Background(), "/usr/bin/prot"); o != nil {
+		if o.Package != "prot" || o.UpdateHint() == "" || o.Message() == "" {
+			t.Errorf("unexpected owner: %+v", o)
+		}
+	}
+
+	fake("", errors.New("no package owns /home/x/.local/bin/prot"))
+	if o := packageOwnerOf(context.Background(), "/home/x/.local/bin/prot"); o != nil {
+		t.Errorf("expected nil owner for unowned file, got %+v", o)
+	}
+}
+
+func TestOwnerParsers(t *testing.T) {
+	for _, q := range ownerQueries {
+		switch q.manager {
+		case "pacman", "rpm":
+			if got := q.parse("prot\n"); got != "prot" {
+				t.Errorf("%s parse = %q", q.manager, got)
+			}
+		case "dpkg":
+			if got := q.parse("prot: /usr/bin/prot"); got != "prot" {
+				t.Errorf("dpkg parse = %q", got)
+			}
+		}
+	}
+}
+
+func TestOwnerHints(t *testing.T) {
+	for manager, want := range map[string]string{"pacman": "yay -Syu prot", "dpkg": "apt install", "rpm": "dnf upgrade"} {
+		if h := (Owner{Manager: manager, Package: "prot"}).UpdateHint(); !strings.Contains(h, want) {
+			t.Errorf("%s hint %q missing %q", manager, h, want)
+		}
 	}
 }
