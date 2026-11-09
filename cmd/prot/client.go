@@ -88,7 +88,16 @@ func fatalf(format string, args ...any) {
 // servicePath builds /v1/services/<id>[/suffix...] with the id escaped, so an alias containing "/" or "?" cannot
 // change which endpoint is called.
 func servicePath(id string, suffix ...string) string {
-	return "/v1/services/" + url.PathEscape(id) + strings.Join(append([]string{""}, suffix...), "/")
+	return resourcePath("/v1/services", id, suffix...)
+}
+
+// tunnelPath builds /v1/tunnels/<id>[/suffix...] with the id escaped.
+func tunnelPath(id string, suffix ...string) string {
+	return resourcePath("/v1/tunnels", id, suffix...)
+}
+
+func resourcePath(collection, id string, suffix ...string) string {
+	return collection + "/" + url.PathEscape(id) + strings.Join(append([]string{""}, suffix...), "/")
 }
 
 func (c *daemonClient) newRequest(method, path string, body any) (*http.Request, error) {
