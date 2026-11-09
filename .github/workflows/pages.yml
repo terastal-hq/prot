@@ -1,7 +1,8 @@
 name: Pages
 
 # Publishes site/ (the landing page) to GitHub Pages. It has no build step: the folder is the site.
-# Also called by the Release workflow, so every release redeploys the site.
+# Releases are merged to main first, so the push that carries a release deploys the site; the github-pages
+# environment only accepts branch refs, so it cannot be deployed from the tag run itself.
 # One-time setup: repository Settings > Pages > Build and deployment > Source: GitHub Actions.
 
 on:
@@ -11,7 +12,6 @@ on:
       - "site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read

@@ -142,16 +142,6 @@ jobs:
             echo "no $f; leaving the generated notes"
           fi
 
-  publish-site:
-    name: Deploy website
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/pages.yml
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-
   publish-aur:
     name: Publish AUR packages
     needs: [test, release-go]
