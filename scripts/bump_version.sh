@@ -47,6 +47,10 @@ case "$BUMP_TYPE" in
     *)
         # Custom version string e.g. 0.2.1
         NEW_VERSION="${BUMP_TYPE#v}"
+        if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: '$BUMP_TYPE' is not patch, minor, major or a version like 0.2.1" >&2
+            exit 1
+        fi
         ;;
 esac
 
