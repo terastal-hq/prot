@@ -22,7 +22,15 @@ Install the `prot` CLI, background daemon (`protd`), and systemd/launchd service
 curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
 ```
 
-For package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
+On Arch Linux, install from the AUR instead (the daemon, CLI and desktop app are separate packages):
+
+```bash
+yay -S prot            # CLI + daemon
+yay -S prot-desktop    # desktop app
+systemctl --user enable --now protd
+```
+
+For other package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
 
 <img src="docs/assets/headings/architecture.svg" alt="Architecture" />
 

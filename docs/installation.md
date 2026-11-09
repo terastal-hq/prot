@@ -13,6 +13,8 @@ The fastest way to install the `prot` CLI, background daemon (`protd`), and regi
 curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
 ```
 
+On Arch Linux, prefer the [AUR packages](#arch-linux-aur) below, which your package manager can update.
+
 ### What the installer does:
 1. Detects your operating system (`Linux`, `macOS`) and CPU architecture (`amd64`, `arm64`).
 2. Installs the standalone `prot` and `protd` binaries into `~/.local/bin/`.
@@ -28,27 +30,56 @@ curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/insta
 
 The first-party **prot Desktop** application is built with Tauri 2 + React.
 
-- **Linux:** Download the `.AppImage` or `.deb` from [Releases](https://github.com/terastal-hq/prot/releases).
+- **Arch Linux:** `yay -S prot-desktop` (see [Package Managers](#arch-linux-aur)).
+- **Linux (other):** Download the `.AppImage` or `.deb` from [Releases](https://github.com/terastal-hq/prot/releases).
 - **macOS:** Download the `.dmg` from [Releases](https://github.com/terastal-hq/prot/releases).
 
-*Note: The desktop app includes bundled `prot` and `protd` sidecar binaries and automatically connects to or installs the background daemon on launch.*
+*Note: The `.AppImage`, `.deb` and `.dmg` bundle `prot` and `protd` and connect to (or start) the background daemon on launch. The AUR `prot-desktop` package instead depends on the `prot` and `protd` packages.*
 
 ---
 
 ## 3. Package Managers
 
-### Debian / Ubuntu
+### Arch Linux (AUR)
+
+prot is split into three packages, built from one PKGBUILD:
+
+| Package | Contents | Install it when |
+|---|---|---|
+| [`protd`](https://aur.archlinux.org/packages/protd) | the daemon and its `systemd --user` unit | you only want the background service |
+| [`prot`](https://aur.archlinux.org/packages/prot) | the CLI and MCP server (depends on `protd`) | you want the command line |
+| [`prot-desktop`](https://aur.archlinux.org/packages/prot-desktop) | the desktop app (depends on `prot`) | you want the GUI |
+
 ```bash
-# Download and install the .deb package
-curl -LO https://github.com/terastal-hq/prot/releases/latest/download/prot_linux_amd64.deb
-sudo dpkg -i prot_linux_amd64.deb
+# CLI + daemon
+yay -S prot
+
+# Desktop app (also pulls in prot and protd)
+yay -S prot-desktop
+
+# Start the daemon now and at every login
+systemctl --user enable --now protd
 ```
 
-### Fedora / RHEL / Arch (RPM)
+Any AUR helper works (`paru -S prot`, or `git clone` the package and run `makepkg -si`).
+
+Packages never enable services themselves, so run the `systemctl --user enable --now protd` line once after installing.
+Updates come through your package manager (`yay -Syu`); after an upgrade, restart the daemon with
+`systemctl --user restart protd`. Running `prot update` on a package-managed install does nothing except tell you this.
+
+### Debian / Ubuntu
+Download the `.deb` for your architecture from [Releases](https://github.com/terastal-hq/prot/releases/latest)
+(the file names include the version, for example `prot_0.1.0_linux_amd64.deb`), then:
+
 ```bash
-# Download and install the .rpm package
-curl -LO https://github.com/terastal-hq/prot/releases/latest/download/prot_linux_amd64.rpm
-sudo rpm -i prot_linux_amd64.rpm
+sudo dpkg -i prot_<version>_linux_amd64.deb
+```
+
+### Fedora / RHEL (RPM)
+Download the `.rpm` for your architecture from [Releases](https://github.com/terastal-hq/prot/releases/latest), then:
+
+```bash
+sudo rpm -i prot_<version>_linux_amd64.rpm
 ```
 
 ---
@@ -159,7 +190,12 @@ prot doctor — Diagnostic and Support Matrix Check
 
 ## 8. Updating prot
 
-### In-Place CLI Self-Updater (Recommended)
+### Installed from a package manager (AUR, `.deb`, `.rpm`)
+Update through the package manager (`yay -Syu` on Arch). `prot update` detects that a package owns the binary and exits
+with a pointer to your package manager instead of replacing files it does not own. `prot update --check` still reports
+whether a newer release exists.
+
+### In-Place CLI Self-Updater (curl installer and manual installs)
 You can update `prot` and `protd` to the latest release directly from your terminal:
 
 ```bash
@@ -172,8 +208,9 @@ prot update
 
 The updater:
 1. Queries the latest GitHub release assets for your operating system and architecture.
-2. Performs an atomic in-place binary swap using OS file renames (avoiding `text file busy` errors with running binaries).
-3. Automatically restarts the background daemon via `systemctl --user restart protd` (Linux) or `launchd` (macOS), maintaining your registered services and aliases without downtime.
+2. Verifies the archive against the release's `checksums.txt` and refuses to install anything that does not match.
+3. Performs an atomic in-place binary swap using OS file renames (avoiding `text file busy` errors with running binaries).
+4. Automatically restarts the background daemon via `systemctl --user restart protd` (Linux) or `launchd` (macOS), maintaining your registered services and aliases without downtime.
 
 ### Script Re-run
 You can also re-run the one-line installer at any time:
