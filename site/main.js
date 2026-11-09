@@ -21,6 +21,70 @@
     io.observe(el);
   }
 
+  /* ---------------------------------------------------------------- entrances as you scroll */
+
+  // [selector, direction, first delay in seconds, step between siblings]. Direction names are styled in style.css.
+  const ENTRANCES = [
+    [".logo", "drop", 0.05, 0],
+    [".sub", "left", 0.35, 0],
+    [".install", "left", 0.5, 0],
+    [".garg", "pop", 0.9, 0],
+    [".top .btn", "down", 0.6, 0.1],
+    [".tape-a", "tape-l", 0, 0], [".tape-b", "tape-r", 0, 0], [".tape-c", "tape-l", 0, 0], [".tape-d", "tape-r", 0, 0],
+    [".tape-e", "tape-l", 0, 0],
+    [".soup .tag", "pop", 0, 0.045],
+    [".big", "right", 0.5, 0],
+    [".crash-card", "left", 0, 0],
+    [".crash-log", "right", 0.25, 0],
+    [".kill-wrap", "down", 0.6, 0],
+    [".desk .w-add", "left", 0, 0],
+    [".desk .w-ls", "right", 0.25, 0],
+    [".desk .w-status", "down", 0.5, 0],
+    [".tun-card", "left", 0, 0],
+    [".rack", "right", 0.2, 0],
+    [".cable-svg", "fade", 0.7, 0],
+    [".plug", "fade", 0.7, 0],
+    [".arrow-plug", "fade", 1.4, 0],
+    [".notepad", "up", 0.1, 0],
+    [".hud", "down", 0, 0],
+    [".arms li", "pop", 0.5, 0.06],
+    [".locks li", "drop", 1.3, 0.12],
+    [".hud-face", "pop", 0.4, 0],
+    [".hud-count", "pop", 0.3, 0],
+    [".foot .btn", "up", 0.2, 0.08],
+  ];
+  if (!calm) {
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    ENTRANCES.forEach(([sel, dir, d0, step]) => {
+      $$(sel).forEach((el, i) => {
+        el.classList.add("rv");
+        el.dataset.rv = dir;
+        el.style.setProperty("--d", (d0 + i * step).toFixed(2) + "s");
+        io.observe(el);
+      });
+    });
+    // sections with something to do besides sliding in
+    const seen = $("#names");
+    whenSeen(seen, () => seen.classList.add("seen"), 0.2);
+    const count = $(".hud-count b");
+    whenSeen($("#hud"), () => {
+      const t0 = performance.now() + 500;
+      const tick = (now) => {
+        const p = clamp((now - t0) / 700, 0, 1);
+        count.textContent = Math.round(p * 12);
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      count.textContent = "0";
+      requestAnimationFrame(tick);
+    }, 0.3);
+  }
+
   /* ---------------------------------------------------------------- install box */
 
   const INSTALL = {
