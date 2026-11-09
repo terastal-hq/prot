@@ -245,13 +245,13 @@ func cmdList(args []string) {
 
 		statusBadge := s.Status
 		switch s.Status {
-		case "running":
+		case storage.StatusRunning:
 			statusBadge = "● running"
-		case "stopped":
+		case storage.StatusStopped:
 			statusBadge = "○ stopped"
-		case "starting":
+		case storage.StatusStarting:
 			statusBadge = "◌ starting"
-		case "crashed":
+		case storage.StatusCrashed:
 			statusBadge = "✕ crashed"
 		}
 
@@ -329,7 +329,7 @@ func cmdAdd(args []string) {
 		Cwd:           *cwdFlag,
 		AutoPort:      *autoPortFlag,
 		AutoStart:     *autoStartFlag,
-		RestartPolicy: "on-failure",
+		RestartPolicy: storage.RestartOnFailure,
 	}
 
 	resp, err := client.request(http.MethodPost, "/v1/services", payload)

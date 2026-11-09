@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -22,7 +23,7 @@ type ServiceView struct {
 	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	Runtime       string            `json:"runtime"` // "managed", "discovered", "remote"
-	Status        string            `json:"status"`  // "stopped", "starting", "running", "unhealthy", "crashed"
+	Status        string            `json:"status"`  // one of the storage.Status* constants
 	Alias         string            `json:"alias"`
 	CanonicalURL  string            `json:"canonical_url,omitempty"`
 	DirectURL     string            `json:"direct_url,omitempty"`
@@ -91,19 +92,24 @@ func New(cfg Config) *Registry {
 }
 
 func (r *Registry) handleSupervisorStatus(serviceID, status string, port uint32) {
+	// Called from supervisor goroutines, so there is no request context to inherit.
 	ctx := context.Background()
-	_ = r.db.UpdateServiceStatus(ctx, serviceID, status)
+	if err := r.db.UpdateServiceStatus(ctx, serviceID, status); err != nil {
+		log.Printf("registry: recording status %q for %q: %v", status, serviceID, err)
+	}
 
 	svc, err := r.db.GetService(ctx, serviceID)
-	if err == nil && svc.Alias != "" {
-		if status == "running" {
-			targetPort := port
-			if targetPort == 0 {
-				targetPort = svc.Port
-			}
-			if targetPort > 0 {
-				targetURL := netutil.LoopbackURL(targetPort)
-				_ = r.router.SetRoute(svc.Alias, targetURL, svc.LANExposed)
+	if err != nil {
+		log.Printf("registry: loading %q after status change: %v", serviceID, err)
+	}
+	if err == nil && svc.Alias != "" && status == storage.StatusRunning {
+		targetPort := port
+		if targetPort == 0 {
+			targetPort = svc.Port
+		}
+		if targetPort > 0 {
+			if err := r.router.SetRoute(svc.Alias, netutil.LoopbackURL(targetPort), svc.LANExposed); err != nil {
+				log.Printf("registry: routing %q to port %d: %v", svc.Alias, targetPort, err)
 			}
 		}
 	}
@@ -186,25 +192,12 @@ func (r *Registry) ListServices(ctx context.Context) ([]ServiceView, error) {
 
 // GetService fetches a service by ID or alias.
 func (r *Registry) GetService(ctx context.Context, idOrAlias string) (*ServiceView, error) {
-	// Try by ID first
-	svc, err := r.db.GetService(ctx, idOrAlias)
-	if err == nil {
-		v := r.toServiceView(*svc)
-		return &v, nil
+	svc, err := r.db.ResolveService(ctx, idOrAlias)
+	if err != nil {
+		return nil, err
 	}
-
-	// Try by Alias
-	all, err := r.db.ListServices(ctx)
-	if err == nil {
-		for _, s := range all {
-			if s.Alias == idOrAlias {
-				v := r.toServiceView(s)
-				return &v, nil
-			}
-		}
-	}
-
-	return nil, storage.ErrNotFound
+	view := r.toServiceView(*svc)
+	return &view, nil
 }
 
 func (r *Registry) toServiceView(s storage.Service) ServiceView {
@@ -260,7 +253,7 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 		svc.Runtime = "managed"
 	}
 	if svc.Status == "" {
-		svc.Status = "stopped"
+		svc.Status = storage.StatusStopped
 	}
 
 	if err := r.db.SaveService(ctx, svc); err != nil {
@@ -363,7 +356,7 @@ func applyPatch(svc *storage.Service, patch ServicePatch, others []storage.Servi
 	}
 	if patch.RestartPolicy != nil {
 		switch *patch.RestartPolicy {
-		case "no", "on-failure", "always":
+		case storage.RestartNever, storage.RestartOnFailure, storage.RestartAlways:
 			svc.RestartPolicy = *patch.RestartPolicy
 		default:
 			return invalidField("restart_policy must be no, on-failure or always")
@@ -441,18 +434,11 @@ func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) 
 }
 
 func (r *Registry) resolveServiceID(ctx context.Context, idOrAlias string) (string, error) {
-	if svc, err := r.db.GetService(ctx, idOrAlias); err == nil {
-		return svc.ID, nil
+	svc, err := r.db.ResolveService(ctx, idOrAlias)
+	if err != nil {
+		return "", err
 	}
-	all, err := r.db.ListServices(ctx)
-	if err == nil {
-		for _, s := range all {
-			if s.Alias == idOrAlias {
-				return s.ID, nil
-			}
-		}
-	}
-	return "", storage.ErrNotFound
+	return svc.ID, nil
 }
 
 // DeleteService stops and deletes a service.
@@ -533,10 +519,10 @@ func (r *Registry) StopService(ctx context.Context, idOrAlias string) (*ServiceV
 		return nil, fmt.Errorf("stopping process: %w", err)
 	}
 
-	_ = r.db.UpdateServiceStatus(ctx, id, "stopped")
+	_ = r.db.UpdateServiceStatus(ctx, id, storage.StatusStopped)
 	_ = r.db.LogEvent(ctx, "service.stopped", id, "")
 
-	svc.Status = "stopped"
+	svc.Status = storage.StatusStopped
 	view := r.toServiceView(*svc)
 	return &view, nil
 }
@@ -600,13 +586,13 @@ func (r *Registry) AdoptDiscovered(ctx context.Context, opts AdoptOptions) (*Ser
 		ID:            fmt.Sprintf("svc_%s_%d", disc.Fingerprint[:8], disc.Port),
 		Name:          name,
 		Runtime:       "managed",
-		Status:        "running",
+		Status:        storage.StatusRunning,
 		Alias:         alias,
 		Command:       opts.Command,
 		Cwd:           disc.Cwd,
 		Port:          disc.Port,
 		AutoPort:      false,
-		RestartPolicy: "no",
+		RestartPolicy: storage.RestartNever,
 	}
 
 	return r.RegisterService(ctx, svc)

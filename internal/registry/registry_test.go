@@ -269,3 +269,33 @@ func TestStopServiceIsIdempotent(t *testing.T) {
 		t.Error("stopping an unknown service must still fail")
 	}
 }
+
+func TestGetServiceByIDOrAliasNeverMatchesEmpty(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "prot.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	reg := New(Config{DB: db, Router: proxy.NewRouter(), GatewayHost: "8080"})
+
+	ctx := context.Background()
+	// Two services without an alias: an empty identifier used to match the first of them.
+	for _, svc := range []storage.Service{
+		{ID: "svc-1", Name: "One"},
+		{ID: "svc-2", Name: "Two", Alias: "two"},
+	} {
+		if _, err := reg.RegisterService(ctx, svc); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := reg.GetService(ctx, ""); !errors.Is(err, storage.ErrNotFound) {
+		t.Errorf("empty identifier should be not found, got %v", err)
+	}
+	if view, err := reg.GetService(ctx, "two"); err != nil || view.ID != "svc-2" {
+		t.Errorf("alias lookup: %+v, %v", view, err)
+	}
+	if view, err := reg.GetService(ctx, "svc-1"); err != nil || view.Name != "One" {
+		t.Errorf("id lookup: %+v, %v", view, err)
+	}
+}
