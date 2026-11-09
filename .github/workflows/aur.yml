@@ -38,6 +38,18 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=${version}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
           grep -n '^pkgver=\|^pkgrel=' packaging/aur/PKGBUILD
 
+      - name: Fill in the source checksum
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          # Done here instead of by the deploy action's updpkgsums, which downloads the tarball into the AUR
+          # repository and commits it (the AUR rejects blobs over 488 KiB).
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          sum="$(curl -fsSL "https://github.com/terastal-hq/prot/archive/refs/tags/v${version}.tar.gz" | sha256sum | cut -d' ' -f1)"
+          test "${#sum}" = 64
+          sed -i "0,/^sha256sums=('SKIP'/s//sha256sums=('${sum}'/" packaging/aur/PKGBUILD
+          grep -n "^sha256sums" -A2 packaging/aur/PKGBUILD
+
       - name: Publish prot, protd and prot-desktop to the AUR
         if: env.AUR_SSH_PRIVATE_KEY != ''
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
@@ -47,7 +59,7 @@ jobs:
           assets: |
             ./packaging/aur/protd.service
             ./packaging/aur/protd.install
-          updpkgsums: true
+          updpkgsums: false
           commit_username: Aditya Gupta
           commit_email: mail@adityagupta.dev
           ssh_private_key: ${{ env.AUR_SSH_PRIVATE_KEY }}
