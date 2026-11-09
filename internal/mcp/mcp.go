@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/storage"
@@ -55,16 +56,30 @@ type ToolResult struct {
 
 // Server handles MCP protocol interactions.
 type Server struct {
-	reg *registry.Registry
+	reg     *registry.Registry
+	version string
 }
 
 // NewServer constructs an MCP Server.
 func NewServer(reg *registry.Registry) *Server {
-	return &Server{reg: reg}
+	return &Server{reg: reg, version: "dev"}
+}
+
+// SetVersion sets the version reported to clients in the initialize handshake.
+func (s *Server) SetVersion(version string) {
+	if version != "" {
+		s.version = version
+	}
 }
 
 // HandleRequest processes an incoming JSON-RPC message.
 func (s *Server) HandleRequest(ctx context.Context, req JSONRPCRequest) *JSONRPCResponse {
+	// JSON-RPC notifications carry no id and must never be answered, even when the method is unknown
+	// (for example notifications/cancelled).
+	if req.ID == nil && strings.HasPrefix(req.Method, "notifications/") {
+		return nil
+	}
+
 	resp := &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
@@ -76,7 +91,7 @@ func (s *Server) HandleRequest(ctx context.Context, req JSONRPCRequest) *JSONRPC
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]string{
 				"name":    "prot",
-				"version": "0.1.0",
+				"version": s.version,
 			},
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{},

@@ -123,6 +123,7 @@ func New(cfg Config) (*Daemon, error) {
 	})
 
 	mcpSrv := mcp.NewServer(reg)
+	mcpSrv.SetVersion(Version)
 
 	d := &Daemon{
 		cfg:        cfg,

@@ -143,3 +143,30 @@ func TestMCPStdioRoundTrip(t *testing.T) {
 		t.Errorf("expected ID 1, got %v", resp.ID)
 	}
 }
+
+func TestMCPNotificationsGetNoResponse(t *testing.T) {
+	srv, _, cleanup := setupTestMCP(t)
+	defer cleanup()
+
+	for _, method := range []string{"notifications/initialized", "notifications/cancelled"} {
+		if resp := srv.HandleRequest(context.Background(), JSONRPCRequest{JSONRPC: "2.0", Method: method}); resp != nil {
+			t.Errorf("%s: expected no response, got %+v", method, resp)
+		}
+	}
+	if resp := srv.HandleRequest(context.Background(), JSONRPCRequest{JSONRPC: "2.0", ID: 7, Method: "nope"}); resp == nil ||
+		resp.Error == nil || resp.Error.Code != -32601 {
+		t.Errorf("unknown request method should return -32601, got %+v", resp)
+	}
+}
+
+func TestMCPReportsConfiguredVersion(t *testing.T) {
+	srv, _, cleanup := setupTestMCP(t)
+	defer cleanup()
+	srv.SetVersion("9.9.9")
+
+	resp := srv.HandleRequest(context.Background(), JSONRPCRequest{JSONRPC: "2.0", ID: 1, Method: "initialize"})
+	data, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(data), `"version":"9.9.9"`) {
+		t.Errorf("version missing from initialize result: %s", data)
+	}
+}
