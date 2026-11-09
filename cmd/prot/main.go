@@ -104,7 +104,7 @@ Routing & Discovery:
   discover         Scan listening TCP processes and HTTP services
   alias <a> <url>  Map a .localhost alias to an upstream target URL
   status           Show protd daemon health and active routes
-  tunnel <cmd>     Manage SSH tunnels (add, ls, start, stop, rm, password)
+  tunnel <cmd>     Manage SSH tunnels (add, ls, edit, start, stop, rm, password)
   ssh ls           List the machines in your ~/.ssh/config
 
 Integrations & Diagnostics:

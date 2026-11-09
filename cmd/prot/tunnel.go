@@ -25,6 +25,7 @@ const tunnelUsage = `Usage: prot tunnel <command>
 Commands:
   add <alias> --host [user@]host --remote-port N [options]   Save an SSH tunnel
   ls [--json]                                                List tunnels and their state
+  edit <id_or_alias> [options]                               Change a tunnel's settings in place
   start <id_or_alias> [--no-wait]                            Connect a tunnel
   stop <id_or_alias>                                         Disconnect a tunnel
   rm <id_or_alias>                                           Disconnect and delete a tunnel
@@ -40,6 +41,7 @@ add options:
   --ssh-port    SSH server port
   --ssh-arg     Extra ssh argument, repeatable
   --auto-connect  Connect now and every time protd starts
+  (see 'prot tunnel edit --help' for the options that change an existing tunnel)
   --password    Ask for an SSH password (or key passphrase) and keep it in your OS keyring
   --password-stdin  Read the password from standard input instead (for scripts)
 
@@ -67,6 +69,8 @@ func cmdTunnel(args []string) {
 		tunnelStart(rest)
 	case "stop":
 		tunnelStop(rest)
+	case "edit":
+		tunnelEditCmd(rest)
 	case "rm", "remove", "delete":
 		tunnelRemove(rest)
 	case "password", "passwd":
