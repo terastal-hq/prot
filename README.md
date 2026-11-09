@@ -74,6 +74,14 @@ open http://web.localhost:8080
 prot logs web -f
 ```
 
+### 5. Reach a Remote Port Through SSH
+```bash
+# http://staging-db.localhost:8080 now reaches port 5432 on the bastion, and reconnects by itself
+prot tunnel add staging-db --host deploy@bastion.example.com --remote-port 5432 --auto-connect
+prot tunnel ls
+```
+See [SSH tunnels](docs/tunnels.md) for what to set up first (keys and host keys).
+
 ### 5. Check Daemon Status & Routes
 ```bash
 prot status
@@ -120,10 +128,12 @@ Tools that target a service take `id_or_alias`.
 - `ensure_running`: Idempotently start a required service if not running.
 - `start_service`, `stop_service`, `restart_service`: Process controls.
 - `set_alias`: Change a service's `.localhost` alias (takes `id_or_alias` and `alias`).
+- `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels (agents cannot create them).
 
 <img src="docs/assets/headings/documentation.svg" alt="Documentation" />
 
 - **[Installation Guide](docs/installation.md)** — One-line installer, binary packages, background service management.
+- **[SSH tunnels](docs/tunnels.md)** — Setup, commands, reconnection and troubleshooting.
 - **[Window Managers](docs/window-managers.md)** — Floating rules for niri, sway, i3 and Hyprland.
 - **[Platform Support Matrix](docs/support-matrix.md)** — Operating system tiers and hardware capabilities.
 - **[OpenAPI Specification](schemas/openapi.yaml)** — Complete REST API contract.

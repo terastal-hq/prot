@@ -11,7 +11,7 @@
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Linux** | `amd64`, `arm64` | **Tier 1** | Primary target (Validated) | Native (`/proc`, `gopsutil`) | Go `net/http` (8080 unprivileged, 80 with auth) | OpenSSH child process | `systemd` user service |
 | **macOS** | `arm64` (Apple Silicon), `amd64` | **Tier 1** | Primary target | Native (`sysctl`, `gopsutil`) | Go `net/http` (8080 unprivileged, 80 with pf/auth) | OpenSSH child process | `launchd` user agent |
-| **Windows** | `x86_64` | **Tier 2** | Technical Preview | `gopsutil` (`iphlpapi.dll`) | Go `net/http` | Windows OpenSSH / PowerShell | Scheduled task / Registry Run |
+| **Windows** | `x86_64` | **Not supported yet** | The supervisor and tunnels need a Unix-like OS, and no Windows binaries are released | | | | |
 
 ---
 
@@ -31,9 +31,13 @@
 - **LAN Sharing Policy:** Routes are private (loopback-only) by default. LAN exposure must be explicitly enabled per route.
 
 ### C. SSH Tunnel Supervision (`internal/tunnels`)
-- **Credential Safety:** Prot never touches or stores raw SSH private keys or passwords in databases. It invokes OpenSSH (`/usr/bin/ssh`) to leverage `~/.ssh/config` and the user's running `ssh-agent`.
+- **Credential Safety:** Prot never touches or stores raw SSH private keys or passwords in databases. It invokes OpenSSH (`/usr/bin/ssh`) to leverage `~/.ssh/config` and the user's running `ssh-agent`. A tunnel stores only the path of an identity file.
+- **Non-interactive:** `ssh` runs with `BatchMode=yes` and `ConnectTimeout=10` (before user arguments, so they cannot override them). Keys must work unattended and the host key must already be trusted.
 - **Readiness Verification:** Probes local forwarded port before transitioning state to `connected`.
-- **Auto-Recovery:** Exponential backoff reconnection loop on unexpected session disconnects.
+- **Auto-Recovery:** Exponential backoff reconnection loop (0.5s to 15s) on failed attempts and unexpected disconnects.
+- **Diagnostics:** The tail of `ssh`'s stderr is kept as the tunnel's last error.
+- **Persistence:** Tunnels are stored in SQLite, restored at startup, and `auto_connect` ones reconnect. Stopping `protd` stops every tunnel.
+- **Addressing:** Each tunnel's alias is a `.localhost` route to its local port. See [SSH tunnels](tunnels.md).
 
 ### D. Security & Management Isolation (`internal/security`)
 - **Token Auth:** Cryptographically secure 256-bit token persisted to `~/.prot/auth.token` with strict `0600` permissions.
