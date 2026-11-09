@@ -73,3 +73,46 @@ func TestLineWriterBoundsHugeLines(t *testing.T) {
 		}
 	}
 }
+
+// Every line is delivered exactly once: lines buffered before subscribing come as history, later ones on the
+// channel, none in both.
+func TestSubscribeWithHistorySplitsCleanly(t *testing.T) {
+	ring := NewLogRing(10)
+	ring.Append(StreamStdout, "a")
+	ring.Append(StreamStdout, "b")
+
+	history, ch, unsub := ring.SubscribeWithHistory(0)
+	defer unsub()
+	ring.Append(StreamStdout, "c")
+	ring.Append(StreamStdout, "d")
+
+	if got := strings.Join(messages(history), ","); got != "a,b" {
+		t.Errorf("history = %q, want a,b", got)
+	}
+	var live []string
+	for len(ch) > 0 {
+		live = append(live, (<-ch).Message)
+	}
+	if got := strings.Join(live, ","); got != "c,d" {
+		t.Errorf("live = %q, want c,d", got)
+	}
+}
+
+func TestSubscribeWithHistoryLimit(t *testing.T) {
+	ring := NewLogRing(10)
+	for _, m := range []string{"a", "b", "c", "d"} {
+		ring.Append(StreamStdout, m)
+	}
+
+	history, _, unsub := ring.SubscribeWithHistory(2)
+	defer unsub()
+	if got := strings.Join(messages(history), ","); got != "c,d" {
+		t.Errorf("history = %q, want c,d", got)
+	}
+
+	none, _, unsub2 := ring.SubscribeWithHistory(-1)
+	defer unsub2()
+	if len(none) != 0 {
+		t.Errorf("limit -1 must return no history, got %v", messages(none))
+	}
+}

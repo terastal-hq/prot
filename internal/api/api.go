@@ -12,6 +12,7 @@ import (
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/storage"
+	"github.com/terastal-hq/prot/internal/supervisor"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
@@ -99,14 +100,24 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
+// startSSE switches the response to a server-sent event stream and returns its flusher. It writes the error
+// response itself and returns false when streaming is not supported.
+func startSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return nil, false
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	return flusher, true
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := startSSE(w)
+	if !ok {
 		return
 	}
 
@@ -249,53 +260,14 @@ func (s *Server) handleRestartService(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	limitStr := r.URL.Query().Get("limit")
 	limit := 100
-	if limitStr != "" {
-		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
-			limit = n
-		}
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+		limit = n
 	}
 
-	follow := r.URL.Query().Get("follow") == "true"
-	if follow {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "streaming not supported", http.StatusInternalServerError)
-			return
-		}
-
-		ch, unsub, err := s.reg.FollowLogs(r.Context(), id)
-		if err != nil {
-			jsonErr(w, http.StatusNotFound, err.Error())
-			return
-		}
-		defer unsub()
-
-		// Stream existing history first
-		history, _ := s.reg.GetLogs(r.Context(), id, limit)
-		for _, entry := range history {
-			data, _ := json.Marshal(entry)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(data))
-		}
-		flusher.Flush()
-
-		for {
-			select {
-			case <-r.Context().Done():
-				return
-			case entry, ok := <-ch:
-				if !ok {
-					return
-				}
-				data, _ := json.Marshal(entry)
-				_, _ = fmt.Fprintf(w, "data: %s\n\n", string(data))
-				flusher.Flush()
-			}
-		}
+	if r.URL.Query().Get("follow") == "true" {
+		s.streamLogs(w, r, id, limit)
+		return
 	}
 
 	logs, err := s.reg.GetLogs(r.Context(), id, limit)
@@ -308,6 +280,46 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		"logs":       logs,
 		"count":      len(logs),
 	})
+}
+
+// streamLogs sends the recent history and then live lines as server-sent events until the client goes away.
+func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request, id string, limit int) {
+	// Subscribe before streaming anything, and take history in the same step, so no line is lost or repeated.
+	history, ch, unsub, err := s.reg.FollowLogs(r.Context(), id, limit)
+	if err != nil {
+		jsonErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	defer unsub()
+
+	flusher, ok := startSSE(w)
+	if !ok {
+		return
+	}
+
+	for _, entry := range history {
+		writeLogEvent(w, entry)
+	}
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case entry, open := <-ch:
+			if !open {
+				return
+			}
+			writeLogEvent(w, entry)
+			flusher.Flush()
+		}
+	}
+}
+
+func writeLogEvent(w http.ResponseWriter, entry supervisor.LogEntry) {
+	if data, err := json.Marshal(entry); err == nil {
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	}
 }
 
 func (s *Server) handleListDiscovery(w http.ResponseWriter, r *http.Request) {

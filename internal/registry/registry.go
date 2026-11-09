@@ -621,13 +621,18 @@ func (r *Registry) GetLogs(ctx context.Context, idOrAlias string, limit int) ([]
 	return r.supervisor.GetLogs(id, limit)
 }
 
-// FollowLogs returns a subscription channel for streaming service logs.
-func (r *Registry) FollowLogs(ctx context.Context, idOrAlias string) (<-chan supervisor.LogEntry, func(), error) {
+// FollowLogs returns the last limit log lines and a live channel for the rest. Each line is delivered exactly
+// once, either in the history or on the channel.
+func (r *Registry) FollowLogs(
+	ctx context.Context,
+	idOrAlias string,
+	limit int,
+) ([]supervisor.LogEntry, <-chan supervisor.LogEntry, func(), error) {
 	id, err := r.resolveServiceID(ctx, idOrAlias)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return r.supervisor.FollowLogs(id)
+	return r.supervisor.FollowLogsWithHistory(id, limit)
 }
 
 // StopAll terminates all running managed processes.

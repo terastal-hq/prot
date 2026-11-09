@@ -70,7 +70,10 @@ func (r *LogRing) Append(stream, message string) {
 func (r *LogRing) GetRecent(limit int) []LogEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.recentLocked(limit)
+}
 
+func (r *LogRing) recentLocked(limit int) []LogEntry {
 	if limit <= 0 || limit > r.count {
 		limit = r.count
 	}
@@ -86,8 +89,20 @@ func (r *LogRing) GetRecent(limit int) []LogEntry {
 // Subscribe returns a channel that receives live entries and an unsubscribe function, which is safe to call
 // more than once.
 func (r *LogRing) Subscribe() (<-chan LogEntry, func()) {
+	_, ch, unsubscribe := r.SubscribeWithHistory(-1)
+	return ch, unsubscribe
+}
+
+// SubscribeWithHistory returns the last limit buffered entries together with a live channel, taken atomically:
+// every line appears exactly once, either in the history or on the channel. history is empty when limit < 0.
+func (r *LogRing) SubscribeWithHistory(limit int) ([]LogEntry, <-chan LogEntry, func()) {
 	ch := make(chan LogEntry, 100)
+
 	r.mu.Lock()
+	history := []LogEntry{}
+	if limit >= 0 {
+		history = r.recentLocked(limit)
+	}
 	r.subscribers[ch] = struct{}{}
 	r.mu.Unlock()
 
@@ -100,7 +115,7 @@ func (r *LogRing) Subscribe() (<-chan LogEntry, func()) {
 			r.mu.Unlock()
 		})
 	}
-	return ch, unsubscribe
+	return history, ch, unsubscribe
 }
 
 // lineWriter is an io.Writer that turns a byte stream into log lines. Handing it to exec.Cmd as Stdout or

@@ -1,12 +1,17 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
@@ -162,5 +167,69 @@ func TestAPIUnknownServiceControlReturns404(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s of an unknown service: status %d, want 404 (%s)", action, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestAPIFollowLogsSendsHistoryOnceThenLiveLines(t *testing.T) {
+	srv, reg, cleanup := setupTestServer(t)
+	defer cleanup()
+	defer reg.StopAll(2 * time.Second)
+
+	ctx := context.Background()
+	svc := storage.Service{ID: "svc-follow", Name: "Follow", Command: "echo first; sleep 0.3; echo second; sleep 30"}
+	if _, err := reg.RegisterService(ctx, svc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.StartService(ctx, "svc-follow"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if logs, _ := reg.GetLogs(ctx, "svc-follow", 0); strings.Contains(fmt.Sprint(logs), "first") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, http.MethodGet, ts.URL+"/v1/services/svc-follow/logs?follow=true", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", ct)
+	}
+
+	var seen []string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data: ") {
+			seen = append(seen, line)
+		}
+		if strings.Contains(line, `"second"`) {
+			break
+		}
+	}
+	all := strings.Join(seen, "\n")
+	if strings.Count(all, `"first"`) != 1 || strings.Count(all, `"second"`) != 1 {
+		t.Errorf("each line must appear exactly once:\n%s", all)
+	}
+}
+
+func TestAPIFollowLogsUnknownServiceIs404(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/services/ghost/logs?follow=true", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }

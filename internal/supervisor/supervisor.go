@@ -415,6 +415,17 @@ func (s *Supervisor) GetLogs(id string, limit int) ([]LogEntry, error) {
 	return rp.logs.GetRecent(limit), nil
 }
 
+// FollowLogsWithHistory returns the last limit log lines plus a live subscription, without gaps or duplicates.
+func (s *Supervisor) FollowLogsWithHistory(id string, limit int) ([]LogEntry, <-chan LogEntry, func(), error) {
+	rp, ok := s.lookup(id)
+	if !ok {
+		return nil, nil, nil, storage.ErrNotFound
+	}
+
+	history, ch, unsub := rp.logs.SubscribeWithHistory(limit)
+	return history, ch, unsub, nil
+}
+
 // FollowLogs subscribes to live logs for a service.
 func (s *Supervisor) FollowLogs(id string) (<-chan LogEntry, func(), error) {
 	rp, ok := s.lookup(id)
