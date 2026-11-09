@@ -39,7 +39,17 @@ PIECES = {
 shot = Image.open(SRC / "servers.png").convert("RGBA")
 shot.save(OUT / "app.png", optimize=True)
 for name, box in PIECES.items():
-    shot.crop(box).save(OUT / f"{name}.png", optimize=True)
+    piece = shot.crop(box)
+    if name == "p-card":
+        # the CRASHED badge is a piece of its own and lifts off the card: paint it out of the card, or it shows twice.
+        # The title bar is a horizontal gradient, so each row is a straight blend of the pixels either side of the badge.
+        x0, x1 = 764, 948
+        for y in range(6, 66):
+            a, b = piece.getpixel((x0, y)), piece.getpixel((x1, y))
+            for x in range(x0 + 1, x1):
+                t = (x - x0) / (x1 - x0)
+                piece.putpixel((x, y), tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(4)))
+    piece.save(OUT / f"{name}.png", optimize=True)
 
 for name in ["card-running", "card-crashed", "card-starting", "tunnel-connected", "tunnel-reconnecting"]:
     shutil.copy(SRC / f"{name}.png", OUT / f"{name}.png")
