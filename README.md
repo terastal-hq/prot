@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/prot-logo.png" alt="prot" width="320" />
+  <a href="https://prot.adityagupta.dev"><img src="docs/assets/prot-logo.png" alt="prot" width="320" /></a>
 </h1>
 
 <p align="center">
@@ -23,15 +23,20 @@ Install the `prot` CLI, background daemon (`protd`), and systemd/launchd service
 curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash
 ```
 
-On Arch Linux, install from the AUR instead (the daemon, CLI and desktop app are separate packages):
+Or take a package for your system:
 
-```bash
-yay -S prot            # CLI + daemon
-yay -S prot-desktop    # desktop app
-systemctl --user enable --now protd
-```
+<p align="center">
+  <a href="https://github.com/terastal-hq/prot/blob/main/docs/installation.md#arch-linux-aur"><img src="docs/assets/buttons/arch.svg" alt="Arch Linux: install from the AUR" width="244" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.deb"><img src="docs/assets/buttons/debian.svg" alt="Debian and Ubuntu: download the .deb" width="244" /></a>
+  <br />
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.rpm"><img src="docs/assets/buttons/fedora.svg" alt="Fedora and RHEL: download the .rpm" width="244" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_aarch64.dmg"><img src="docs/assets/buttons/macos.svg" alt="macOS: download the .dmg" width="244" /></a>
+</p>
 
-For other package managers (`.deb`, `.rpm`), desktop installers (`.AppImage`, `.dmg`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
+For other architectures, the desktop installers (`.AppImage`, `.deb`), and build instructions, see the **[Installation Guide](docs/installation.md)**.
+
+<br />
+<br />
 
 <img src="docs/assets/headings/architecture.svg" alt="Architecture" />
 

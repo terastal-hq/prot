@@ -7,6 +7,8 @@
 # - apps/desktop/src-tauri/Cargo.toml
 # - apps/desktop/src-tauri/tauri.conf.json
 # - schemas/openapi.yaml
+# - apps/desktop/src-tauri/Cargo.lock
+# - README.md and site/index.html (the download button links)
 #
 # Usage:
 #   scripts/bump_version.sh <patch|minor|major|x.y.z>
@@ -76,9 +78,17 @@ sed -i -E "s/\"version\": \"[^\"]+\"/\"version\": \"$NEW_VERSION\"/" "$ROOT_DIR/
 # 6. Update schemas/openapi.yaml
 sed -i -E "s/version: [0-9]+\.[0-9]+\.[0-9]+/version: $NEW_VERSION/" "$ROOT_DIR/schemas/openapi.yaml"
 
+# 7. Update the prot-desktop entry in apps/desktop/src-tauri/Cargo.lock (the build fails with --locked otherwise)
+sed -i -E "/^name = \"prot-desktop\"$/{n;s/^version = \"[^\"]+\"/version = \"$NEW_VERSION\"/}" "$ROOT_DIR/apps/desktop/src-tauri/Cargo.lock"
+
+# 8. Point the README's and the website's download buttons (.deb, .rpm, .dmg) at this version's release assets
+sed -i -E "s#releases/download/v[0-9]+\.[0-9]+\.[0-9]+/prot_[0-9]+\.[0-9]+\.[0-9]+_#releases/download/v$NEW_VERSION/prot_${NEW_VERSION}_#" "$ROOT_DIR/README.md" "$ROOT_DIR/site/index.html"
+
 echo "✓ Updated version to $NEW_VERSION across all project manifests:"
 echo "  • internal/daemon/daemon.go"
 echo "  • apps/desktop/package.json"
 echo "  • apps/desktop/src-tauri/Cargo.toml"
 echo "  • apps/desktop/src-tauri/tauri.conf.json"
 echo "  • schemas/openapi.yaml"
+echo "  • apps/desktop/src-tauri/Cargo.lock"
+echo "  • README.md and site/index.html (download button links)"
