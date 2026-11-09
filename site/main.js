@@ -429,17 +429,15 @@
       const s = SCRIPTS[b.dataset.type];
       if (s) render(b, s, s.length - 1, 1e9);
     });
-    const start = async () => {
-      for (const b of bodies) {
-        const s = SCRIPTS[b.dataset.type];
-        if (s) await play(b, s);
-      }
-    };
     if (!calm) {
       // keep the box sizes while typing: measure the finished text first
       bodies.forEach((b) => (b.style.minHeight = b.offsetHeight + "px"));
       bodies.forEach((b) => (b.textContent = ""));
-      whenSeen(desk, start, 0.35);
+      // each terminal starts typing when it is itself on screen, not after the ones above it have finished
+      bodies.forEach((b) => {
+        const s = SCRIPTS[b.dataset.type];
+        if (s) whenSeen(b.closest(".win"), () => play(b, s), 0.4);
+      });
     }
 
     // drag a terminal by its title bar and it comes to the front
