@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -291,14 +292,23 @@ func (m *Manager) GetStatus(id string) (*TunnelStatus, bool) {
 	return &copy, true
 }
 
-// List returns statuses for all registered tunnels.
+// List returns statuses for all registered tunnels, sorted by alias (then id) so the order is stable between
+// calls: clients poll this and would otherwise see the tunnels reshuffle every time.
 func (m *Manager) List() []TunnelStatus {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	res := make([]TunnelStatus, 0, len(m.tunnels))
 	for _, st := range m.tunnels {
 		res = append(res, st.status)
 	}
+	m.mu.RUnlock()
+
+	sort.Slice(res, func(i, j int) bool {
+		a, b := res[i].Config, res[j].Config
+		if a.Alias != b.Alias {
+			return a.Alias < b.Alias
+		}
+		return a.ID < b.ID
+	})
 	return res
 }
 

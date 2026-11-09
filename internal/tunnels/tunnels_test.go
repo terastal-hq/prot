@@ -384,3 +384,26 @@ func TestObserverSeesConnectAndDisconnect(t *testing.T) {
 		t.Errorf("observer saw %v, want connecting, connected, ..., disconnected", seen)
 	}
 }
+
+// Clients poll the list; Go map order would make the tunnels jump around on every refresh.
+func TestListIsSortedAndStable(t *testing.T) {
+	mgr := fakeSSHManager(t, "listen")
+	for _, alias := range []string{"zeta", "alpha", "mid", "beta", "omega", "gamma"} {
+		port, _ := netutil.FreePort()
+		cfg := TunnelConfig{ID: "id-" + alias, Alias: alias, SSHHost: "h", RemotePort: 1, LocalPort: port}
+		if _, err := mgr.Register(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	want := []string{"alpha", "beta", "gamma", "mid", "omega", "zeta"}
+	for round := 0; round < 25; round++ {
+		var got []string
+		for _, st := range mgr.List() {
+			got = append(got, st.Config.Alias)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("round %d: order %v, want %v", round, got, want)
+		}
+	}
+}
