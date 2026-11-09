@@ -629,8 +629,9 @@ code {
 .card > :not(.card-head:first-child) {
   margin: 10px 10px 0;
 }
-.card > :last-child {
-  margin-bottom: 10px;
+/* the shorthand above out-specifies :last-child, so the bottom gap lives in padding */
+.card {
+  padding-bottom: 14px;
 }
 
 .card-head {
