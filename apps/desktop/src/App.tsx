@@ -102,6 +102,12 @@ function toEditForm(s: ServiceView): EditForm {
   };
 }
 
+/** Splits "http://a.localhost:8080" into ["http://a.localhost", ":8080"] so the port can be de-emphasised. */
+function splitUrlPort(url: string): string[] {
+  const m = url.match(/^(.*?)(:\d+)$/);
+  return m ? [m[1], m[2]] : [url];
+}
+
 function GearIcon() {
   return <img src={gearsIcon} alt="" width={40} height={35} draggable={false} />;
 }
@@ -603,7 +609,9 @@ export function App() {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {s.canonical_url || `http://${s.alias}.localhost`}
+                          {splitUrlPort(s.canonical_url || `http://${s.alias}.localhost`).map((part, i) =>
+                            i === 0 ? part : <span key="port" className="url-port">{part}</span>
+                          )}
                         </a>
                         <button
                           className="icon-btn"

@@ -684,6 +684,15 @@ code {
   word-break: break-all;
   min-width: 0;
 }
+.card-url .url-port {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ash);
+  text-shadow: none;
+}
+.card-url:hover .url-port {
+  color: var(--gold);
+}
 .card-url:hover {
   color: var(--gold);
 }
