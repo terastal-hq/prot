@@ -678,11 +678,14 @@ code {
   color: var(--acid);
   font-size: 16px;
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
   text-shadow: 1px 1px 0 #000;
   word-break: break-all;
   min-width: 0;
+}
+.card-url .url-host {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .card-url .url-port {
   font-size: 13px;

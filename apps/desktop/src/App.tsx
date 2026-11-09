@@ -610,7 +610,7 @@ export function App() {
                           rel="noreferrer"
                         >
                           {splitUrlPort(s.canonical_url || `http://${s.alias}.localhost`).map((part, i) =>
-                            i === 0 ? part : <span key="port" className="url-port">{part}</span>
+                            <span key={i} className={i === 0 ? "url-host" : "url-port"}>{part}</span>
                           )}
                         </a>
                         <button
