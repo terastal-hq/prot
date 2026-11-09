@@ -141,6 +141,9 @@ jobs:
           else
             echo "no $f; leaving the generated notes"
           fi
+          # The release APIs behind `prot update`, scripts/install.sh and the README badges only see a release that is
+          # not a pre-release: /releases/latest returns 404 otherwise. Make sure this one is the latest.
+          gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
 
   publish-aur:
     name: Publish AUR packages
