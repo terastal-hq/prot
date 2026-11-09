@@ -19,33 +19,33 @@ import (
 
 // ProcessService represents an observed listening TCP process.
 type ProcessService struct {
-	ID             string    `json:"id"`
-	PID            int32     `json:"pid"`
-	Name           string    `json:"name"`
-	Exe            string    `json:"exe"`
-	Cmdline        string    `json:"cmdline"`
-	Cwd            string    `json:"cwd"`
-	Username       string    `json:"username"`
-	CreateTime     int64     `json:"create_time"`
-	IP             string    `json:"ip"`
-	Port           uint32    `json:"port"`
-	Family         string    `json:"family"`
-	IsHTTP         bool      `json:"is_http"`
-	HTTPStatus     int       `json:"http_status,omitempty"`
-	HTTPServer     string    `json:"http_server,omitempty"`
-	Framework      string    `json:"framework,omitempty"`
-	PageTitle      string    `json:"page_title,omitempty"`
-	DiscoveredAt   time.Time `json:"discovered_at"`
-	Fingerprint    string    `json:"fingerprint"`
+	ID           string    `json:"id"`
+	PID          int32     `json:"pid"`
+	Name         string    `json:"name"`
+	Exe          string    `json:"exe"`
+	Cmdline      string    `json:"cmdline"`
+	Cwd          string    `json:"cwd"`
+	Username     string    `json:"username"`
+	CreateTime   int64     `json:"create_time"`
+	IP           string    `json:"ip"`
+	Port         uint32    `json:"port"`
+	Family       string    `json:"family"`
+	IsHTTP       bool      `json:"is_http"`
+	HTTPStatus   int       `json:"http_status,omitempty"`
+	HTTPServer   string    `json:"http_server,omitempty"`
+	Framework    string    `json:"framework,omitempty"`
+	PageTitle    string    `json:"page_title,omitempty"`
+	DiscoveredAt time.Time `json:"discovered_at"`
+	Fingerprint  string    `json:"fingerprint"`
 }
 
 // Config controls discovery behavior and protocol check bounds.
 type Config struct {
-	CheckHTTP       bool          `json:"check_http"`
-	HTTPTimeout     time.Duration `json:"http_timeout"`
-	MaxBodyBytes    int64         `json:"max_body_bytes"`
-	IgnorePorts     []uint32      `json:"ignore_ports"`
-	ExcludePids     []int32       `json:"exclude_pids"`
+	CheckHTTP    bool          `json:"check_http"`
+	HTTPTimeout  time.Duration `json:"http_timeout"`
+	MaxBodyBytes int64         `json:"max_body_bytes"`
+	IgnorePorts  []uint32      `json:"ignore_ports"`
+	ExcludePids  []int32       `json:"exclude_pids"`
 }
 
 // DefaultConfig provides conservative defaults.

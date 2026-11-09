@@ -14,13 +14,13 @@ import (
 
 // Route defines an upstream target for a given alias/hostname.
 type Route struct {
-	Alias       string    `json:"alias"`
-	Host        string    `json:"host"`         // e.g. "frontend.localhost"
-	TargetURL   string    `json:"target_url"`   // e.g. "http://127.0.0.1:3000"
-	LANExposed  bool      `json:"lan_exposed"`  // Whether exposed beyond loopback
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	parsedURL   *url.URL
+	Alias      string    `json:"alias"`
+	Host       string    `json:"host"`        // e.g. "frontend.localhost"
+	TargetURL  string    `json:"target_url"`  // e.g. "http://127.0.0.1:3000"
+	LANExposed bool      `json:"lan_exposed"` // Whether exposed beyond loopback
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	parsedURL  *url.URL
 }
 
 // Router provides thread-safe dynamic route resolution.
@@ -150,7 +150,7 @@ type Server struct {
 
 // ServerOptions configures the proxy server.
 type ServerOptions struct {
-	ListenAddr   string        // e.g. "127.0.0.1:8080" or ":8080"
+	ListenAddr   string // e.g. "127.0.0.1:8080" or ":8080"
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }

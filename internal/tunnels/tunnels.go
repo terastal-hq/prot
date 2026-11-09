@@ -26,11 +26,11 @@ const (
 type TunnelConfig struct {
 	ID           string   `json:"id"`
 	Alias        string   `json:"alias"`
-	SSHHost      string   `json:"ssh_host"`     // Remote SSH server or host alias in ~/.ssh/config
-	SSHUser      string   `json:"ssh_user"`     // Optional user
-	RemoteHost   string   `json:"remote_host"`  // Address on the remote machine (e.g. 127.0.0.1)
-	RemotePort   uint32   `json:"remote_port"`  // Port on the remote machine (e.g. 3000)
-	LocalPort    uint32   `json:"local_port"`   // Desired local port, 0 for automatic
+	SSHHost      string   `json:"ssh_host"`    // Remote SSH server or host alias in ~/.ssh/config
+	SSHUser      string   `json:"ssh_user"`    // Optional user
+	RemoteHost   string   `json:"remote_host"` // Address on the remote machine (e.g. 127.0.0.1)
+	RemotePort   uint32   `json:"remote_port"` // Port on the remote machine (e.g. 3000)
+	LocalPort    uint32   `json:"local_port"`  // Desired local port, 0 for automatic
 	IdentityFile string   `json:"identity_file,omitempty"`
 	ExtraArgs    []string `json:"extra_args,omitempty"`
 	AutoConnect  bool     `json:"auto_connect"`
