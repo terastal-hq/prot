@@ -287,6 +287,17 @@ export function App() {
   const [svcCwd, setSvcCwd] = useState("");
   const [svcAutoPort, setSvcAutoPort] = useState(false);
 
+  // New tunnel sheet
+  const [showAddTunnel, setShowAddTunnel] = useState(false);
+  const [tunAlias, setTunAlias] = useState("");
+  const [tunHost, setTunHost] = useState("");
+  const [tunRemotePort, setTunRemotePort] = useState("");
+  const [tunRemoteHost, setTunRemoteHost] = useState("");
+  const [tunLocalPort, setTunLocalPort] = useState("");
+  const [tunIdentity, setTunIdentity] = useState("");
+  const [tunSshPort, setTunSshPort] = useState("");
+  const [tunAuto, setTunAuto] = useState(true);
+
   // Adopt sheet
   const [adopting, setAdopting] = useState<DiscoveredProcess | null>(null);
   const [adoptAlias, setAdoptAlias] = useState("");
@@ -442,6 +453,16 @@ export function App() {
     run(() => client.deleteService(id));
   };
 
+  const handleDeleteTunnel = (id: string) => {
+    if (armedDelete !== id) {
+      setArmedDelete(id);
+      window.setTimeout(() => setArmedDelete((cur) => (cur === id ? null : cur)), 3000);
+      return;
+    }
+    setArmedDelete(null);
+    run(() => client.deleteTunnel(id));
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -461,6 +482,43 @@ export function App() {
       setSvcPort("");
       setSvcCwd("");
       setSvcAutoPort(false);
+      await refreshData();
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  const resetTunnelForm = () => {
+    setTunAlias("");
+    setTunHost("");
+    setTunRemotePort("");
+    setTunRemoteHost("");
+    setTunLocalPort("");
+    setTunIdentity("");
+    setTunSshPort("");
+    setTunAuto(true);
+  };
+
+  const handleCreateTunnel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // "user@host" is the familiar spelling; the API takes the user separately.
+    const at = tunHost.lastIndexOf("@");
+    const sshUser = at >= 0 ? tunHost.slice(0, at) : undefined;
+    const sshHost = at >= 0 ? tunHost.slice(at + 1) : tunHost;
+    try {
+      await client.createTunnel({
+        alias: tunAlias.trim().toLowerCase(),
+        ssh_host: sshHost.trim(),
+        ssh_user: sshUser,
+        remote_host: tunRemoteHost.trim() || undefined,
+        remote_port: parseInt(tunRemotePort, 10),
+        local_port: tunLocalPort ? parseInt(tunLocalPort, 10) : 0,
+        identity_file: tunIdentity.trim() || undefined,
+        extra_args: tunSshPort ? ["-p", String(parseInt(tunSshPort, 10))] : [],
+        auto_connect: tunAuto,
+      });
+      setShowAddTunnel(false);
+      resetTunnelForm();
       await refreshData();
     } catch (err) {
       fail(err);
@@ -748,35 +806,71 @@ export function App() {
           <>
             <div className="screen-title">
               <h1>tunnels</h1>
-              <span className="label">SSH</span>
+              <button className="btn btn-primary" onClick={() => setShowAddTunnel(true)}>
+                <Plus size={16} strokeWidth={2.5} /> New
+              </button>
             </div>
-            {tunnels.length === 0 && <p className="dim">No remote SSH tunnels configured. Add one with prot tunnel.</p>}
-            {tunnels.map((t) => (
-              <div key={t.config.id} className={`card ${tunnelKind(t.state) === "crash" ? "crashed" : ""}`}>
-                <div className="card-head">
-                  <span className="card-name">{t.config.alias}</span>
-                  <Status kind={tunnelKind(t.state)} text={t.state.toUpperCase()} />
-                </div>
-                <div className="card-line">
-                  <code>
-                    {t.config.ssh_host} &rarr; {t.config.remote_host}:{t.config.remote_port}
-                  </code>
-                  <span className="port">:{t.assigned_local_port || t.config.local_port}</span>
-                </div>
-                {t.last_error && <span className="dim">{t.last_error}</span>}
-                <div className="card-actions">
-                  {t.state === "connected" ? (
-                    <button className="btn btn-sm btn-danger" onClick={() => run(() => client.stopTunnel(t.config.id))}>
-                      Disconnect
+            {tunnels.length === 0 && (
+              <p className="dim">
+                No SSH tunnels yet. Add one with New, or from a terminal with <code>prot tunnel add</code>.
+              </p>
+            )}
+            {tunnels.map((t) => {
+              const active = t.state === "connected" || t.state === "connecting" || t.state === "reconnecting";
+              const url = t.canonical_url || `http://${t.config.alias}.localhost`;
+              return (
+                <div key={t.config.id} className={`card ${tunnelKind(t.state) === "crash" ? "crashed" : ""}`}>
+                  <div className="card-head">
+                    <span className="card-name">{t.config.alias}</span>
+                    <Status kind={tunnelKind(t.state)} text={t.state === "reconnecting" ? "RETRYING" : t.state.toUpperCase()} />
+                  </div>
+                  <div className="card-line">
+                    <code>
+                      {t.config.ssh_user ? `${t.config.ssh_user}@` : ""}
+                      {t.config.ssh_host} &rarr; {t.config.remote_host}:{t.config.remote_port}
+                    </code>
+                    <span className="port">:{t.assigned_local_port || t.config.local_port || "auto"}</span>
+                  </div>
+                  <div className="url-row">
+                    <a className="card-url" href={url} target="_blank" rel="noreferrer">
+                      {splitUrlPort(url).map((part, i) => (
+                        <span key={i} className={i === 0 ? "url-host" : "url-port"}>
+                          {part}
+                        </span>
+                      ))}
+                    </a>
+                  </div>
+                  {t.last_error && t.state !== "connected" && <div className="card-error">{t.last_error}</div>}
+                  <div className="card-actions">
+                    {active ? (
+                      <button
+                        className="icon-btn danger"
+                        title="Disconnect"
+                        onClick={() => run(() => client.stopTunnel(t.config.id))}
+                      >
+                        <Square size={14} strokeWidth={2.5} />
+                      </button>
+                    ) : (
+                      <button
+                        className="icon-btn go"
+                        title="Connect"
+                        onClick={() => run(() => client.startTunnel(t.config.id))}
+                      >
+                        <Play size={14} strokeWidth={2.5} />
+                      </button>
+                    )}
+                    <span className="spacer" />
+                    <button
+                      className={`icon-btn danger ${armedDelete === t.config.id ? "armed" : ""}`}
+                      title={armedDelete === t.config.id ? "Click again to remove" : "Remove"}
+                      onClick={() => handleDeleteTunnel(t.config.id)}
+                    >
+                      <Trash2 size={14} strokeWidth={2.5} />
                     </button>
-                  ) : (
-                    <button className="btn btn-sm btn-go" onClick={() => run(() => client.startTunnel(t.config.id))}>
-                      Connect
-                    </button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
 
@@ -875,6 +969,47 @@ export function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* New tunnel sheet */}
+      {showAddTunnel && (
+        <form className="sheet" onSubmit={handleCreateTunnel}>
+          <div className="sheet-head">
+            <h2>new tunnel</h2>
+            <button type="button" className="icon-btn" onClick={() => setShowAddTunnel(false)} aria-label="Close">
+              <X size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="sheet-body">
+            <Field label="Alias" required autoFocus placeholder="staging-db" prompt="@" value={tunAlias} onChange={setTunAlias} />
+            <Field label="SSH host" required placeholder="deploy@bastion.example.com" prompt=">" value={tunHost} onChange={setTunHost} />
+            <div className="form-row">
+              <Field label="Remote port" required type="number" placeholder="5432" prompt=":" value={tunRemotePort} onChange={setTunRemotePort} />
+              <Field label="Remote host" placeholder="127.0.0.1" value={tunRemoteHost} onChange={setTunRemoteHost} />
+            </div>
+            <div className="form-row">
+              <Field label="Local port" type="number" placeholder="auto" prompt=":" value={tunLocalPort} onChange={setTunLocalPort} />
+              <Field label="SSH port" type="number" placeholder="22" prompt=":" value={tunSshPort} onChange={setTunSshPort} />
+            </div>
+            <Field label="Identity file" placeholder="~/.ssh/id_ed25519" prompt="/" value={tunIdentity} onChange={setTunIdentity} />
+            <label className="check">
+              <input type="checkbox" checked={tunAuto} onChange={(e) => setTunAuto(e.target.checked)} />
+              Connect now, and whenever protd starts
+            </label>
+            <p className="dim">
+              ssh runs without a terminal: use a key from ssh-agent or an unencrypted key, and connect to the host once
+              from a terminal first so ssh trusts its host key.
+            </p>
+          </div>
+          <div className="sheet-foot">
+            <button type="button" className="btn" onClick={() => setShowAddTunnel(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Create
+            </button>
+          </div>
+        </form>
       )}
 
       {/* New server sheet */}

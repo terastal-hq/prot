@@ -50,13 +50,28 @@ export interface TunnelStatus {
     remote_host: string;
     remote_port: number;
     local_port: number;
+    identity_file?: string;
+    extra_args?: string[];
     auto_connect: boolean;
   };
+  canonical_url?: string;
   state: "disconnected" | "connecting" | "connected" | "reconnecting" | "failed";
   assigned_local_port: number;
   pid?: number;
   last_error?: string;
   reconnections: number;
+}
+
+export interface NewTunnel {
+  alias: string;
+  ssh_host: string;
+  ssh_user?: string;
+  remote_host?: string;
+  remote_port: number;
+  local_port?: number;
+  identity_file?: string;
+  extra_args?: string[];
+  auto_connect: boolean;
 }
 
 export interface DaemonHealth {

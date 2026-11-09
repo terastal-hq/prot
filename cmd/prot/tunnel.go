@@ -37,8 +37,10 @@ add options:
   --ssh-arg     Extra ssh argument, repeatable
   --auto-connect  Connect now and every time protd starts
 
-The tunnel is reachable at http://<alias>.localhost. ssh runs without a terminal, so it must authenticate without
-a prompt: use a key in ssh-agent or an unencrypted key file.`
+The tunnel is reachable at http://<alias>.localhost.
+
+ssh runs without a terminal, so it cannot ask anything: authenticate with a key from ssh-agent or an unencrypted
+key file, and connect to the host once from a terminal first so ssh trusts its host key.`
 
 // connectWait is how long start and add --auto-connect wait for a tunnel to come up before reporting.
 const connectWait = 20 * time.Second

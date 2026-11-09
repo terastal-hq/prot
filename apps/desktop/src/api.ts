@@ -1,4 +1,4 @@
-import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
+import { DaemonHealth, DiscoveredProcess, LogEntry, NewTunnel, ServiceView, TunnelStatus } from "./types";
 
 export class ProtClient {
   private baseUrl: string;
@@ -140,7 +140,7 @@ export class ProtClient {
     return res.tunnels || [];
   }
 
-  async createTunnel(tun: any): Promise<TunnelStatus> {
+  async createTunnel(tun: NewTunnel): Promise<TunnelStatus> {
     return this.request<TunnelStatus>("/v1/tunnels", {
       method: "POST",
       body: JSON.stringify(tun),
@@ -151,8 +151,12 @@ export class ProtClient {
     return this.request<TunnelStatus>(`/v1/tunnels/${id}/start`, { method: "POST" });
   }
 
-  async stopTunnel(id: string): Promise<void> {
-    return this.request<void>(`/v1/tunnels/${id}/stop`, { method: "POST" });
+  async stopTunnel(id: string): Promise<TunnelStatus> {
+    return this.request<TunnelStatus>(`/v1/tunnels/${id}/stop`, { method: "POST" });
+  }
+
+  async deleteTunnel(id: string): Promise<void> {
+    return this.request<void>(`/v1/tunnels/${id}`, { method: "DELETE" });
   }
 }
 

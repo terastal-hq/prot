@@ -1300,6 +1300,18 @@ code {
 }
 
 /* shown on a card after a restart-only setting was changed on a live server */
+.card-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: #ff6b5c;
+  background: var(--sunken);
+  padding: 6px 8px;
+  border: 2px solid;
+  border-color: var(--inset);
+  word-break: break-word;
+}
+
 .restart-note {
   display: flex;
   align-items: center;
