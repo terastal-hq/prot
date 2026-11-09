@@ -7,6 +7,7 @@ survive restarts of the daemon.
 ```bash
 # Reach Postgres on a bastion as http://staging-db.localhost:8080 (and 127.0.0.1:15432)
 prot tunnel add staging-db --host deploy@bastion.example.com --remote-port 5432 --local-port 15432 --auto-connect
+prot tunnel add staging-db --host prod-db --remote-port 5432   # or a machine name from ~/.ssh/config
 ```
 
 ## Before you add one
@@ -22,6 +23,41 @@ already be settled:
    unknown host key on your behalf.
 
 Whatever `~/.ssh/config` says for the host (user, port, `ProxyJump`, identity) applies too.
+
+## Machines from `~/.ssh/config`
+
+Instead of spelling out `user@host`, use a name you already defined in your ssh configuration:
+
+```
+# ~/.ssh/config
+Host prod-db
+  HostName db.internal.example.com
+  User deploy
+  Port 2222
+  IdentityFile ~/.ssh/prod_key
+  ProxyJump bastion
+```
+
+```bash
+prot ssh ls                                              # the machines prot found, and what ssh resolves for each
+prot tunnel add db --host prod-db --remote-port 5432     # user, port, key and jump host all come from the config
+```
+
+In the desktop app the SSH host box in the New Tunnel sheet is both a text box and a dropdown of these names (type
+to filter, arrow keys and Enter to choose). Choosing one fills in the port and key ssh will use and shows
+`deploy@db.internal.example.com:2222 via bastion` under the box. Those values are only passed on if you change them;
+otherwise the tunnel stores just the name and ssh keeps reading your configuration, so editing `~/.ssh/config`
+later changes the tunnel too. Typing any other host still works.
+
+How prot reads it:
+
+- **Listing** reads `~/.ssh/config` and follows `Include` (globs and `~` work). Only concrete `Host` names are
+  offered; wildcard patterns such as `Host *.internal` are not machines. Nothing is executed.
+- **Resolving** one name is done by `ssh -G`, so `Match`, `Include` and wildcard blocks mean exactly what they mean
+  to ssh. Only names the configuration lists are resolved. Keys that ssh tries by default (`~/.ssh/id_ed25519` and
+  friends) are not shown as the machine's key.
+- A name you pick must be listed by the file `protd` reads. Start `protd -ssh-config <file>` to use another file;
+  tunnels then use it too.
 
 ## Passwords
 
@@ -105,7 +141,8 @@ fail with `address already in use`; stop the leftover with `pkill -f 'ssh -N -L'
 ## REST API
 
 `GET/POST /v1/tunnels`, `DELETE /v1/tunnels/{id}`, `POST /v1/tunnels/{id}/start`, `POST /v1/tunnels/{id}/stop`,
-`PUT/DELETE /v1/tunnels/{id}/password`. `{id}` is the tunnel's id or its alias. `POST` accepts an optional
+`PUT/DELETE /v1/tunnels/{id}/password`, and for the machines in `~/.ssh/config` `GET /v1/ssh/hosts` and
+`GET /v1/ssh/hosts/{alias}`. `{id}` is the tunnel's id or its alias. `POST` accepts an optional
 write-only `password`. Errors use the usual statuses: 400 invalid alias, field or password, 404 unknown tunnel,
 409 alias already used, 501 when `ssh` is not installed or a password was given without a keyring. See
 [openapi.yaml](../schemas/openapi.yaml).

@@ -80,7 +80,8 @@ prot logs web -f
 prot tunnel add staging-db --host deploy@bastion.example.com --remote-port 5432 --auto-connect
 prot tunnel ls
 ```
-Authenticate with ssh-agent or a key, or add `--password` to keep a password in your OS keyring. See
+`--host` takes a machine name from your `~/.ssh/config` too (`prot ssh ls` lists them, and the desktop app offers
+them in a dropdown). Authenticate with ssh-agent or a key, or add `--password` to keep a password in your OS keyring. See
 [SSH tunnels](docs/tunnels.md) for what to set up first (keys and host keys).
 
 ### 5. Check Daemon Status & Routes
