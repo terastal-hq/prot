@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/terastal-hq/prot/internal/discovery"
+	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/supervisor"
@@ -101,7 +102,7 @@ func (r *Registry) handleSupervisorStatus(serviceID, status string, port uint32)
 				targetPort = svc.Port
 			}
 			if targetPort > 0 {
-				targetURL := fmt.Sprintf("http://127.0.0.1:%d", targetPort)
+				targetURL := netutil.LoopbackURL(targetPort)
 				_ = r.router.SetRoute(svc.Alias, targetURL, svc.LANExposed)
 			}
 		}
@@ -236,7 +237,7 @@ func (r *Registry) toServiceView(s storage.Service) ServiceView {
 	}
 
 	if view.Port > 0 {
-		view.DirectURL = fmt.Sprintf("http://127.0.0.1:%d", view.Port)
+		view.DirectURL = netutil.LoopbackURL(view.Port)
 	}
 
 	if view.Alias != "" {
@@ -267,7 +268,7 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 	}
 
 	if svc.Alias != "" && svc.Port > 0 {
-		targetURL := fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
+		targetURL := netutil.LoopbackURL(svc.Port)
 		_ = r.router.SetRoute(svc.Alias, targetURL, svc.LANExposed)
 	}
 
@@ -426,7 +427,7 @@ func (r *Registry) syncRoute(oldAlias string, svc *storage.Service) {
 	}
 	target := rt.TargetURL
 	if _, running := r.supervisor.GetState(svc.ID); !running && svc.Port > 0 {
-		target = fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
+		target = netutil.LoopbackURL(svc.Port)
 	}
 	if oldAlias != svc.Alias {
 		r.router.RemoveRoute(oldAlias)
@@ -645,3 +646,6 @@ func (r *Registry) ListDiscovered() []discovery.ProcessService {
 	}
 	return res
 }
+
+// Supervisor exposes the process supervisor for inspection in tests and diagnostics.
+func (r *Registry) Supervisor() *supervisor.Supervisor { return r.supervisor }

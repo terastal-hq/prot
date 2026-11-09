@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/terastal-hq/prot/internal/api"
 	"github.com/terastal-hq/prot/internal/discovery"
 	"github.com/terastal-hq/prot/internal/mcp"
+	"github.com/terastal-hq/prot/internal/netutil"
 	"github.com/terastal-hq/prot/internal/proxy"
 	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/security"
@@ -205,13 +208,16 @@ func (d *Daemon) recoverState(ctx context.Context) error {
 	for _, s := range savedServices {
 		// Re-register route in proxy router if port and alias exist
 		if s.Alias != "" && s.Port > 0 {
-			targetURL := fmt.Sprintf("http://127.0.0.1:%d", s.Port)
-			_ = d.router.SetRoute(s.Alias, targetURL, s.LANExposed)
+			if err := d.router.SetRoute(s.Alias, netutil.LoopbackURL(s.Port), s.LANExposed); err != nil {
+				log.Printf("protd: restoring route %q for %q: %v", s.Alias, s.Name, err)
+			}
 		}
 
-		// Auto-start services if configured
+		// Auto-start services if configured. A failure must not stop the others, but it must be visible.
 		if s.AutoStart && s.Command != "" {
-			_, _ = d.reg.StartService(ctx, s.ID)
+			if _, err := d.reg.StartService(ctx, s.ID); err != nil {
+				log.Printf("protd: autostart of %q failed: %v", s.Name, err)
+			}
 		}
 	}
 	return nil
@@ -297,18 +303,25 @@ func (d *Daemon) discoveryLoop(ctx context.Context) {
 	}
 }
 
-func (d *Daemon) runDiscovery(ctx context.Context) {
-	ignorePorts := []uint32{}
-	if _, portStr, err := net.SplitHostPort(d.ProxyAddr()); err == nil {
-		var p uint32
-		if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {
-			ignorePorts = append(ignorePorts, p)
-		}
+// portOf extracts the numeric port from a host:port address.
+func portOf(addr string) (uint32, bool) {
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, false
 	}
-	if _, portStr, err := net.SplitHostPort(d.AdminAddr()); err == nil {
-		var p uint32
-		if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {
-			ignorePorts = append(ignorePorts, p)
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint32(port), true
+}
+
+func (d *Daemon) runDiscovery(ctx context.Context) {
+	// Prot's own listeners are not development services.
+	ignorePorts := []uint32{}
+	for _, addr := range []string{d.ProxyAddr(), d.AdminAddr()} {
+		if port, ok := portOf(addr); ok {
+			ignorePorts = append(ignorePorts, port)
 		}
 	}
 

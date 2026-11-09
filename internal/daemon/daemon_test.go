@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/terastal-hq/prot/internal/storage"
 )
 
 func TestDaemonLifecycle(t *testing.T) {
@@ -108,5 +112,56 @@ func TestDaemonLifecycle(t *testing.T) {
 	// Verify state file removed
 	if _, err := os.Stat(stateFile); !os.IsNotExist(err) {
 		t.Errorf("expected state file to be removed after Stop")
+	}
+}
+
+func TestPortOf(t *testing.T) {
+	cases := map[string]struct {
+		port uint32
+		ok   bool
+	}{
+		"127.0.0.1:8080": {8080, true},
+		"[::1]:4400":     {4400, true},
+		"127.0.0.1":      {0, false},
+		"host:notaport":  {0, false},
+		"host:99999":     {0, false},
+	}
+	for addr, want := range cases {
+		if port, ok := portOf(addr); port != want.port || ok != want.ok {
+			t.Errorf("portOf(%q) = %d, %v; want %d, %v", addr, port, ok, want.port, want.ok)
+		}
+	}
+}
+
+func TestAutostartFailureIsLogged(t *testing.T) {
+	d, err := New(Config{DataDir: t.TempDir(), GatewayAddr: "127.0.0.1:0", AdminAddr: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = d.Stop(context.Background()) }()
+
+	broken := storage.Service{
+		ID: "svc-broken", Name: "Broken App", Command: "sleep 1", Cwd: "/nonexistent/prot-test-dir",
+		AutoStart: true, RestartPolicy: storage.RestartNever,
+	}
+	healthy := storage.Service{ID: "svc-ok", Name: "Healthy App", Command: "sleep 30", AutoStart: true}
+	for _, svc := range []storage.Service{broken, healthy} {
+		if err := d.db.SaveService(context.Background(), svc); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	defer log.SetOutput(os.Stderr)
+
+	if err := d.recoverState(context.Background()); err != nil {
+		t.Fatalf("recoverState: %v", err)
+	}
+	if !strings.Contains(logged.String(), `autostart of "Broken App" failed`) {
+		t.Errorf("autostart failure was not logged: %q", logged.String())
+	}
+	if st, ok := d.reg.Supervisor().GetState("svc-ok"); !ok || st.PID == 0 {
+		t.Errorf("one failing service must not prevent the others from starting: %+v", st)
 	}
 }

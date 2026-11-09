@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// LoopbackURL returns the http URL of a service listening on a loopback port.
+func LoopbackURL(port uint32) string {
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
 // FreePort asks the kernel for an unused loopback TCP port.
 //
 // The port is released before returning, so another process can claim it before the caller binds it. Callers

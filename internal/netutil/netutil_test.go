@@ -58,3 +58,9 @@ func TestWaitForPortStopsOnCancel(t *testing.T) {
 		t.Error("cancellation was not prompt")
 	}
 }
+
+func TestLoopbackURL(t *testing.T) {
+	if got := LoopbackURL(8765); got != "http://127.0.0.1:8765" {
+		t.Errorf("LoopbackURL = %q", got)
+	}
+}
