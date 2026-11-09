@@ -1,11 +1,9 @@
 package supervisor
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -17,27 +15,50 @@ import (
 	"github.com/terastal-hq/prot/internal/storage"
 )
 
+// Timing knobs for process supervision.
+const (
+	defaultStopTimeout = 3 * time.Second
+	killGrace          = 2 * time.Second // how long Stop waits for the process to vanish after SIGKILL
+	readyTimeout       = 10 * time.Second
+	pipeDrainDelay     = 2 * time.Second // how long Wait lingers when a grandchild keeps the output pipes open
+	restartBaseDelay   = time.Second
+	restartMaxDelay    = 30 * time.Second
+	stableRunTime      = 10 * time.Second // a run this long resets the crash-loop backoff
+)
+
 // ProcessState describes the live execution state of a supervised process.
 type ProcessState struct {
 	ID           string     `json:"id"`
 	PID          int        `json:"pid"`
 	PGID         int        `json:"pgid"`
-	Status       string     `json:"status"` // "stopped", "starting", "running", "crashed"
+	Status       string     `json:"status"` // one of the storage.Status* constants
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	AssignedPort uint32     `json:"assigned_port"`
 	ExitCode     int        `json:"exit_code"`
 	RestartCount int        `json:"restart_count"`
 }
 
+// run is a single launch of a service's process. done is closed once the process has exited and the
+// supervisor has recorded its final state, so waiting on it observes the outcome.
+type run struct {
+	gen            uint64
+	cmd            *exec.Cmd
+	cancel         context.CancelFunc
+	pgid           int
+	started        time.Time
+	stdout, stderr *lineWriter
+	done           chan struct{}
+}
+
 type runningProcess struct {
 	mu           sync.RWMutex
 	svc          storage.Service
-	cmd          *exec.Cmd
-	ctx          context.Context
-	cancel       context.CancelFunc
 	state        ProcessState
 	logs         *LogRing
 	shouldRun    bool
+	current      *run // nil while no process is alive
+	gen          uint64
+	failStreak   int
 	restartTimer *time.Timer
 }
 
@@ -46,319 +67,296 @@ type Supervisor struct {
 	mu        sync.RWMutex
 	processes map[string]*runningProcess
 	onStatus  func(serviceID, status string, port uint32)
+
+	restartBase time.Duration // overridable in tests
 }
 
-// New constructs a Supervisor.
+// New constructs a Supervisor. onStatus, if set, is called (without any supervisor lock held) whenever a
+// process changes state.
 func New(onStatus func(serviceID, status string, port uint32)) *Supervisor {
 	return &Supervisor{
-		processes: make(map[string]*runningProcess),
-		onStatus:  onStatus,
+		processes:   make(map[string]*runningProcess),
+		onStatus:    onStatus,
+		restartBase: restartBaseDelay,
 	}
 }
 
-// Start spawns a managed service child process.
-func (s *Supervisor) Start(ctx context.Context, svc storage.Service) (*ProcessState, error) {
+func (s *Supervisor) notify(id, status string, port uint32) {
+	if s.onStatus != nil {
+		s.onStatus(id, status, port)
+	}
+}
+
+func (s *Supervisor) lookup(id string) (*runningProcess, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rp, ok := s.processes[id]
+	return rp, ok
+}
+
+func (s *Supervisor) processFor(svc storage.Service) *runningProcess {
 	s.mu.Lock()
-	rp, exists := s.processes[svc.ID]
-	if !exists {
+	defer s.mu.Unlock()
+
+	rp, ok := s.processes[svc.ID]
+	if !ok {
 		rp = &runningProcess{
-			svc:  svc,
-			logs: NewLogRing(2000),
-			state: ProcessState{
-				ID:     svc.ID,
-				Status: "stopped",
-			},
+			svc:   svc,
+			logs:  NewLogRing(2000),
+			state: ProcessState{ID: svc.ID, Status: storage.StatusStopped},
 		}
 		s.processes[svc.ID] = rp
 	}
-	s.mu.Unlock()
+	return rp
+}
+
+// Start spawns a managed service child process. Starting a service that is already starting or running
+// returns its current state.
+func (s *Supervisor) Start(_ context.Context, svc storage.Service) (*ProcessState, error) {
+	rp := s.processFor(svc)
 
 	rp.mu.Lock()
-	if rp.state.Status == "running" || rp.state.Status == "starting" {
+	if rp.state.Status == storage.StatusRunning || rp.state.Status == storage.StatusStarting {
 		st := rp.state
 		rp.mu.Unlock()
 		return &st, nil
 	}
 
+	rp.stopRestartTimerLocked() // a manual start supersedes a pending automatic restart
 	rp.shouldRun = true
 	rp.svc = svc
-	rp.state.Status = "starting"
+	rp.failStreak = 0
 	rp.state.ExitCode = 0
+
+	err := s.launchLocked(rp)
+	if err != nil {
+		rp.state.Status = storage.StatusCrashed
+		rp.shouldRun = false
+		rp.logs.Append(StreamSystem, "Failed to start: "+err.Error())
+	}
+	st := rp.state
 	rp.mu.Unlock()
 
-	if err := s.launchProcess(rp); err != nil {
-		rp.mu.Lock()
-		rp.state.Status = "crashed"
-		rp.shouldRun = false
-		st := rp.state
-		rp.mu.Unlock()
-		if s.onStatus != nil {
-			s.onStatus(svc.ID, "crashed", 0)
-		}
+	if err != nil {
+		s.notify(svc.ID, storage.StatusCrashed, 0)
 		return &st, err
 	}
-
-	rp.mu.RLock()
-	st := rp.state
-	rp.mu.RUnlock()
 	return &st, nil
 }
 
-func (s *Supervisor) launchProcess(rp *runningProcess) error {
-	rp.mu.Lock()
-	defer rp.mu.Unlock()
-
+// launchLocked starts the process for rp.svc. The caller must hold rp.mu.
+func (s *Supervisor) launchLocked(rp *runningProcess) error {
 	svc := rp.svc
-	if svc.Command == "" {
+	if strings.TrimSpace(svc.Command) == "" {
 		return errors.New("command cannot be empty")
 	}
 
-	// Port assignment
-	assignedPort := svc.Port
+	port := svc.Port
 	if svc.AutoPort {
-		freePort, err := netutil.FreePort()
+		free, err := netutil.FreePort()
 		if err != nil {
 			return fmt.Errorf("allocating auto port: %w", err)
 		}
-		assignedPort = freePort
-	}
-	rp.state.AssignedPort = assignedPort
-
-	// Prepare environment
-	env := os.Environ()
-	for k, v := range svc.Env {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	if assignedPort > 0 {
-		env = append(env, fmt.Sprintf("PORT=%d", assignedPort))
+		port = free
 	}
 
-	// Prepare command execution (using shell to support pipelines / flags)
+	script := shellCommand(svc.Command, svc.Args)
 	ctx, cancel := context.WithCancel(context.Background())
-	rp.ctx = ctx
-	rp.cancel = cancel
 
-	fullCmd := svc.Command
-	if len(svc.Args) > 0 {
-		fullCmd = fmt.Sprintf("%s %s", svc.Command, strings.Join(svc.Args, " "))
-	}
-
-	cmd := exec.CommandContext(ctx, "sh", "-c", fullCmd)
-	if svc.Cwd != "" {
-		cmd.Dir = svc.Cwd
-	}
-	cmd.Env = env
-
-	// Use Process Groups so killing terminates all child processes
+	// Commands run through the shell so pipelines and flags work. Process groups let us signal the whole tree.
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	cmd.Dir = svc.Cwd
+	cmd.Env = processEnv(svc, port)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		return fmt.Errorf("stdout pipe error: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		return fmt.Errorf("stderr pipe error: %w", err)
-	}
+	// Writers (not StdoutPipe) so Cmd.Wait drains all output before returning: the last lines of a process that
+	// exits or crashes are the ones that matter most.
+	stdout := newLineWriter(rp.logs, StreamStdout)
+	stderr := newLineWriter(rp.logs, StreamStderr)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.WaitDelay = pipeDrainDelay
+	cmd.Cancel = func() error { return signalGroup(cmd.Process.Pid, syscall.SIGKILL) }
 
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return fmt.Errorf("failed to start process: %w", err)
 	}
 
-	pid := cmd.Process.Pid
 	now := time.Now().UTC()
-	rp.cmd = cmd
+	pid := cmd.Process.Pid
+	rp.gen++
+	r := &run{
+		gen: rp.gen, cmd: cmd, cancel: cancel, pgid: pid, started: now,
+		stdout: stdout, stderr: stderr, done: make(chan struct{}),
+	}
+	rp.current = r
 	rp.state.PID = pid
 	rp.state.PGID = pid
 	rp.state.StartedAt = &now
-	rp.state.Status = "starting"
+	rp.state.AssignedPort = port
+	rp.state.Status = storage.StatusStarting
+	rp.logs.Append(StreamSystem, fmt.Sprintf("Process started with PID %d (command: %s)", pid, script))
 
-	rp.logs.Append("system", fmt.Sprintf("Process started with PID %d (command: %s)", pid, fullCmd))
-
-	// Stream logs asynchronously
-	go captureOutput(stdoutPipe, rp.logs, "stdout")
-	go captureOutput(stderrPipe, rp.logs, "stderr")
-
-	// Wait loop and supervision goroutine
-	go s.monitorProcess(rp, cmd, assignedPort)
-
+	go s.supervise(rp, r)
+	go s.awaitReady(ctx, rp, r, port)
 	return nil
 }
 
-func (s *Supervisor) monitorProcess(rp *runningProcess, cmd *exec.Cmd, port uint32) {
-	// Probe readiness if port is known
-	if port > 0 {
-		go func() {
-			rp.mu.RLock()
-			procCtx := rp.ctx
-			rp.mu.RUnlock()
-
-			if netutil.WaitForPort(procCtx, port, 10*time.Second) {
-				rp.mu.Lock()
-				if rp.state.Status == "starting" {
-					rp.state.Status = "running"
-					rp.logs.Append("system", fmt.Sprintf("Service is ready and listening on port %d", port))
-				}
-				rp.mu.Unlock()
-				if s.onStatus != nil {
-					s.onStatus(rp.svc.ID, "running", port)
-				}
-			}
-		}()
-	} else {
-		rp.mu.Lock()
-		rp.state.Status = "running"
-		rp.mu.Unlock()
-		if s.onStatus != nil {
-			s.onStatus(rp.svc.ID, "running", 0)
-		}
-	}
-
-	// Wait for process completion
-	err := cmd.Wait()
-
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = -1
-		}
-	}
-
-	rp.mu.Lock()
-	rp.state.PID = 0
-	rp.state.PGID = 0
-	rp.state.ExitCode = exitCode
-
-	if !rp.shouldRun || (exitCode == 0 && rp.svc.RestartPolicy == "no") {
-		rp.state.Status = "stopped"
-		rp.shouldRun = false
-		rp.logs.Append("system", fmt.Sprintf("Process stopped (exit code %d)", exitCode))
-		rp.mu.Unlock()
-		if s.onStatus != nil {
-			s.onStatus(rp.svc.ID, "stopped", 0)
+// awaitReady marks the run as running once its port accepts connections (immediately when no port is known).
+func (s *Supervisor) awaitReady(ctx context.Context, rp *runningProcess, r *run, port uint32) {
+	if port > 0 && !netutil.WaitForPort(ctx, port, readyTimeout) {
+		if ctx.Err() == nil {
+			rp.logs.Append(StreamSystem, fmt.Sprintf("Port %d did not open within %s", port, readyTimeout))
 		}
 		return
 	}
 
-	// Process exited unexpectedly
-	rp.state.Status = "crashed"
-	rp.logs.Append("system", fmt.Sprintf("Process exited unexpectedly with code %d", exitCode))
-
-	shouldRestart := rp.svc.RestartPolicy == "always" || (rp.svc.RestartPolicy == "on-failure" && exitCode != 0)
-	if shouldRestart {
-		rp.state.RestartCount++
-		rp.logs.Append(
-			"system",
-			fmt.Sprintf(
-				"Restart policy %q triggered; restarting in 1s (attempt %d)...",
-				rp.svc.RestartPolicy,
-				rp.state.RestartCount,
-			),
-		)
+	rp.mu.Lock()
+	if rp.current != r || rp.state.Status != storage.StatusStarting {
 		rp.mu.Unlock()
-		if s.onStatus != nil {
-			s.onStatus(rp.svc.ID, "crashed", 0)
-		}
+		return
+	}
+	rp.state.Status = storage.StatusRunning
+	id := rp.svc.ID
+	if port > 0 {
+		rp.logs.Append(StreamSystem, fmt.Sprintf("Service is ready and listening on port %d", port))
+	}
+	rp.mu.Unlock()
 
-		time.Sleep(1 * time.Second)
-		rp.mu.RLock()
-		desired := rp.shouldRun
-		rp.mu.RUnlock()
-		if desired {
-			_ = s.launchProcess(rp)
+	s.notify(id, storage.StatusRunning, port)
+}
+
+// supervise waits for a run to exit, records the outcome and schedules a restart if the policy asks for one.
+func (s *Supervisor) supervise(rp *runningProcess, r *run) {
+	err := r.cmd.Wait()
+	r.stdout.Flush()
+	r.stderr.Flush()
+	r.cancel()
+	exitCode := exitCodeOf(r.cmd, err)
+
+	rp.mu.Lock()
+	id := rp.svc.ID
+	policy := rp.svc.RestartPolicy
+	rp.current = nil
+	rp.state.PID = 0
+	rp.state.PGID = 0
+	rp.state.ExitCode = exitCode
+
+	var status string
+	switch {
+	case !rp.shouldRun:
+		status = storage.StatusStopped
+		rp.logs.Append(StreamSystem, fmt.Sprintf("Process stopped (exit code %d)", exitCode))
+	case exitCode == 0 && policy != storage.RestartAlways:
+		// A clean exit that the policy does not ask us to repeat is a finished job, not a crash.
+		status = storage.StatusStopped
+		rp.shouldRun = false
+		rp.logs.Append(StreamSystem, "Process exited cleanly (exit code 0)")
+	default:
+		status = storage.StatusCrashed
+		rp.logs.Append(StreamSystem, fmt.Sprintf("Process exited unexpectedly with code %d", exitCode))
+		if policy == storage.RestartAlways || policy == storage.RestartOnFailure {
+			if time.Since(r.started) >= stableRunTime {
+				rp.failStreak = 0
+			}
+			s.scheduleRestartLocked(rp, r.gen)
+		} else {
+			rp.shouldRun = false
 		}
-	} else {
+	}
+	rp.state.Status = status
+	rp.mu.Unlock()
+
+	close(r.done) // after the final state is recorded, so Stop observes the outcome
+	s.notify(id, status, 0)
+}
+
+// scheduleRestartLocked arms the restart timer with exponential backoff. The caller must hold rp.mu.
+func (s *Supervisor) scheduleRestartLocked(rp *runningProcess, gen uint64) {
+	rp.failStreak++
+	rp.state.RestartCount++
+	delay := s.restartDelay(rp.failStreak)
+	rp.logs.Append(StreamSystem, fmt.Sprintf(
+		"Restart policy %q triggered; restarting in %s (attempt %d)...",
+		rp.svc.RestartPolicy, delay, rp.state.RestartCount,
+	))
+	rp.restartTimer = time.AfterFunc(delay, func() { s.restart(rp, gen) })
+}
+
+func (s *Supervisor) restartDelay(streak int) time.Duration {
+	delay := s.restartBase
+	for i := 1; i < streak && delay < restartMaxDelay; i++ {
+		delay *= 2
+	}
+	return min(delay, restartMaxDelay)
+}
+
+// restart relaunches a crashed process when its backoff timer fires, unless the process was stopped, started
+// manually or already replaced in the meantime. A failed relaunch is logged and retried with more backoff.
+func (s *Supervisor) restart(rp *runningProcess, gen uint64) {
+	rp.mu.Lock()
+	if !rp.shouldRun || rp.gen != gen || rp.current != nil {
 		rp.mu.Unlock()
-		if s.onStatus != nil {
-			s.onStatus(rp.svc.ID, "crashed", 0)
-		}
+		return
+	}
+	rp.restartTimer = nil
+
+	if err := s.launchLocked(rp); err != nil {
+		rp.logs.Append(StreamSystem, "Restart failed: "+err.Error())
+		s.scheduleRestartLocked(rp, gen)
+	}
+	rp.mu.Unlock()
+}
+
+func (rp *runningProcess) stopRestartTimerLocked() {
+	if rp.restartTimer != nil {
+		rp.restartTimer.Stop()
+		rp.restartTimer = nil
 	}
 }
 
-func captureOutput(r io.Reader, ring *LogRing, stream string) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		ring.Append(stream, scanner.Text())
-	}
-}
-
-// Stop terminates the process group gracefully.
+// Stop terminates the process group: SIGTERM first, SIGKILL after timeout. It returns once the process has
+// exited, so callers can safely start it again.
 func (s *Supervisor) Stop(id string, timeout time.Duration) error {
-	s.mu.RLock()
-	rp, exists := s.processes[id]
-	s.mu.RUnlock()
-	if !exists {
+	rp, ok := s.lookup(id)
+	if !ok {
 		return storage.ErrNotFound
+	}
+	if timeout <= 0 {
+		timeout = defaultStopTimeout
 	}
 
 	rp.mu.Lock()
 	rp.shouldRun = false
-	if rp.state.Status == "stopped" || rp.cmd == nil || rp.cmd.Process == nil {
-		rp.state.Status = "stopped"
+	rp.stopRestartTimerLocked()
+	r := rp.current
+	if r == nil {
+		rp.state.Status = storage.StatusStopped
 		rp.mu.Unlock()
 		return nil
 	}
-
-	pgid := rp.state.PGID
-	rp.logs.Append("system", "Sending SIGTERM to process group...")
+	rp.logs.Append(StreamSystem, "Sending SIGTERM to process group...")
 	rp.mu.Unlock()
 
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-
-	// Send SIGTERM to entire process group (-pgid)
-	if pgid > 0 {
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	}
-
-	// Wait up to timeout for process to exit without leaking goroutine
-	done := make(chan struct{})
-	stopPolling := make(chan struct{})
-	defer close(stopPolling)
-
-	go func() {
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopPolling:
-				return
-			case <-ticker.C:
-				rp.mu.RLock()
-				st := rp.state.Status
-				rp.mu.RUnlock()
-				if st == "stopped" || st == "crashed" {
-					close(done)
-					return
-				}
-			}
-		}
-	}()
-
+	_ = signalGroup(r.pgid, syscall.SIGTERM)
 	select {
-	case <-done:
+	case <-r.done:
 		return nil
 	case <-time.After(timeout):
-		// Force kill
-		if pgid > 0 {
-			rp.logs.Append("system", "Timeout reached; sending SIGKILL to process group")
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-		}
-		if rp.cancel != nil {
-			rp.cancel()
-		}
 	}
 
-	return nil
+	rp.logs.Append(StreamSystem, "Timeout reached; sending SIGKILL to process group")
+	_ = signalGroup(r.pgid, syscall.SIGKILL)
+	r.cancel()
+	select {
+	case <-r.done:
+		return nil
+	case <-time.After(killGrace):
+		return fmt.Errorf("process group %d did not exit after SIGKILL", r.pgid)
+	}
 }
 
-// StopAll terminates all running managed processes.
+// StopAll terminates all running managed processes in parallel.
 func (s *Supervisor) StopAll(timeout time.Duration) {
 	s.mu.RLock()
 	ids := make([]string, 0, len(s.processes))
@@ -367,31 +365,38 @@ func (s *Supervisor) StopAll(timeout time.Duration) {
 	}
 	s.mu.RUnlock()
 
+	var wg sync.WaitGroup
 	for _, id := range ids {
-		_ = s.Stop(id, timeout)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.Stop(id, timeout)
+		}()
 	}
+	wg.Wait()
 }
 
 // Restart stops and restarts the process.
 func (s *Supervisor) Restart(ctx context.Context, id string) (*ProcessState, error) {
-	s.mu.RLock()
-	rp, exists := s.processes[id]
-	s.mu.RUnlock()
-	if !exists {
+	rp, ok := s.lookup(id)
+	if !ok {
 		return nil, storage.ErrNotFound
 	}
 
+	rp.mu.RLock()
 	svc := rp.svc
-	_ = s.Stop(id, 3*time.Second)
+	rp.mu.RUnlock()
+
+	if err := s.Stop(id, defaultStopTimeout); err != nil {
+		return nil, fmt.Errorf("stopping before restart: %w", err)
+	}
 	return s.Start(ctx, svc)
 }
 
-// GetState returns the current process state.
+// GetState returns a snapshot of the current process state.
 func (s *Supervisor) GetState(id string) (*ProcessState, bool) {
-	s.mu.RLock()
-	rp, exists := s.processes[id]
-	s.mu.RUnlock()
-	if !exists {
+	rp, ok := s.lookup(id)
+	if !ok {
 		return nil, false
 	}
 
@@ -403,25 +408,64 @@ func (s *Supervisor) GetState(id string) (*ProcessState, bool) {
 
 // GetLogs returns recent logs for a service.
 func (s *Supervisor) GetLogs(id string, limit int) ([]LogEntry, error) {
-	s.mu.RLock()
-	rp, exists := s.processes[id]
-	s.mu.RUnlock()
-	if !exists {
+	rp, ok := s.lookup(id)
+	if !ok {
 		return nil, storage.ErrNotFound
 	}
-
 	return rp.logs.GetRecent(limit), nil
 }
 
 // FollowLogs subscribes to live logs for a service.
 func (s *Supervisor) FollowLogs(id string) (<-chan LogEntry, func(), error) {
-	s.mu.RLock()
-	rp, exists := s.processes[id]
-	s.mu.RUnlock()
-	if !exists {
+	rp, ok := s.lookup(id)
+	if !ok {
 		return nil, nil, storage.ErrNotFound
 	}
 
 	ch, unsub := rp.logs.Subscribe()
 	return ch, unsub, nil
+}
+
+func processEnv(svc storage.Service, port uint32) []string {
+	env := os.Environ()
+	for k, v := range svc.Env {
+		env = append(env, k+"="+v)
+	}
+	if port > 0 {
+		env = append(env, fmt.Sprintf("PORT=%d", port))
+	}
+	return env
+}
+
+// shellCommand appends args to command, quoting each so spaces and shell metacharacters stay literal.
+func shellCommand(command string, args []string) string {
+	if len(args) == 0 {
+		return command
+	}
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+	}
+	return command + " " + strings.Join(quoted, " ")
+}
+
+// signalGroup sends sig to every process in the group led by pgid. A group that is already gone is not an error.
+func signalGroup(pgid int, sig syscall.Signal) error {
+	if pgid <= 0 {
+		return nil
+	}
+	if err := syscall.Kill(-pgid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
+}
+
+func exitCodeOf(cmd *exec.Cmd, waitErr error) int {
+	if cmd.ProcessState != nil {
+		return cmd.ProcessState.ExitCode() // -1 when killed by a signal
+	}
+	if waitErr != nil {
+		return -1
+	}
+	return 0
 }

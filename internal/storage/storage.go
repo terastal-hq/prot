@@ -17,12 +17,27 @@ import (
 // ErrNotFound is returned when an entity is not found.
 var ErrNotFound = errors.New("not found")
 
+// Service lifecycle states stored in Service.Status and reported by the supervisor.
+const (
+	StatusStopped  = "stopped"
+	StatusStarting = "starting"
+	StatusRunning  = "running"
+	StatusCrashed  = "crashed"
+)
+
+// Restart policies for Service.RestartPolicy.
+const (
+	RestartNever     = "no"
+	RestartOnFailure = "on-failure"
+	RestartAlways    = "always"
+)
+
 // Service represents a managed or saved service definition.
 type Service struct {
 	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	Runtime       string            `json:"runtime"` // "managed", "discovered", "remote"
-	Status        string            `json:"status"`  // "stopped", "starting", "running", "unhealthy", "unknown"
+	Status        string            `json:"status"`  // one of the Status* constants
 	Alias         string            `json:"alias"`
 	Command       string            `json:"command"`
 	Args          []string          `json:"args"`
@@ -31,7 +46,7 @@ type Service struct {
 	Port          uint32            `json:"port"`
 	AutoPort      bool              `json:"auto_port"`
 	AutoStart     bool              `json:"auto_start"`
-	RestartPolicy string            `json:"restart_policy"` // "no", "always", "on-failure"
+	RestartPolicy string            `json:"restart_policy"` // one of the Restart* constants
 	LANExposed    bool              `json:"lan_exposed"`
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
