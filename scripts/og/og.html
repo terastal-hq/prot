@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>prot social image</title>
+<style>
+@font-face { font-family: Anton; src: url(../../site/assets/fonts/anton.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; src: url(../../site/assets/fonts/jetbrains-mono.woff2) format("woff2"); font-weight: 100 800; }
+:root { --hazard:#fb8808; --daemon:#5af451; --gold:#ffd21a; --ink:#050608; --ash:#9aa092; --metal-hi:#9aa092; --metal-lo:#0a0b0c; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1200px; height: 630px; overflow: hidden; background: #0a0807; }
+.card { position: relative; width: 1200px; height: 630px; overflow: hidden;
+  background:
+    radial-gradient(900px 560px at 92% -10%, rgba(255,90,0,.34), transparent 62%),
+    radial-gradient(620px 520px at -8% 78%, rgba(90,244,81,.10), transparent 62%),
+    radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.3px) 0 0 / 5px 5px, #0a0807; }
+.card::after { content:""; position:absolute; inset:0; opacity:.1; mix-blend-mode:overlay; pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.logo { position:absolute; left:34px; top:62px; width:560px; transform:rotate(-4.5deg); filter:drop-shadow(10px 12px 0 rgba(0,0,0,.55)); }
+.garg { position:absolute; left:360px; top:250px; width:290px; transform:rotate(3deg); filter:drop-shadow(8px 10px 0 rgba(0,0,0,.5)); z-index:4; }
+.row { position:absolute; display:flex; align-items:center; gap:16px; white-space:nowrap; transform-origin:0 50%; }
+.port { font:400 46px/1 Anton; color:transparent; background:linear-gradient(180deg,#fff6b0,#ffd21a 42%,#fb8808 58%,#c4500a); -webkit-background-clip:text; background-clip:text;
+  filter:drop-shadow(-1px 1px 0 #000) drop-shadow(-1px 1px 0 #000) drop-shadow(-1px 1px 0 #1a0600); opacity:.62; }
+.arrow { width:46px; height:22px; filter:drop-shadow(2px 3px 0 rgba(0,0,0,.6)); }
+.chip { display:flex; align-items:center; gap:12px; padding:9px 16px; background:#000; border:3px solid; border-color:var(--metal-lo) var(--metal-hi) var(--metal-hi) var(--metal-lo);
+  outline:1px solid var(--metal-lo); box-shadow:7px 8px 0 rgba(0,0,0,.5); font:600 26px/1 "JetBrains Mono"; color:var(--daemon); }
+.chip i { width:12px; height:12px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#c8ffc0,#5af451 45%,#1c7a16); box-shadow:0 0 8px rgba(90,244,81,.8); }
+.chip small { font:500 17px "JetBrains Mono"; color:var(--ash); margin-left:-6px; }
+.tape { position:absolute; left:-4%; width:108%; height:34px; z-index:3;
+  background:repeating-linear-gradient(-45deg,var(--hazard) 0 12px,var(--ink) 12px 24px);
+  clip-path:polygon(0 14%,2% 0,38% 6%,61% 0,98% 9%,100% 0,99% 100%,70% 92%,41% 100%,3% 93%,1% 100%,0 84%); opacity:.93; }
+</style>
+<div class="card">
+  <div class="tape" style="bottom:36px; transform:rotate(-1.4deg)"></div>
+  <img class="logo" src="../../site/assets/img/logo.png" alt="">
+  <img class="garg" src="../../site/assets/img/gargoyle.png" alt="">
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <g id="arr"><path d="M3 12 C 14 4, 28 18, 40 11" fill="none" stroke="#ffd21a" stroke-width="4" stroke-linecap="round"/><path d="M32 3 L43 11 L33 19" fill="none" stroke="#ffd21a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
+  </defs></svg>
+
+  <div class="row" style="left:700px; top:84px;  transform:rotate(-2.4deg)"><span class="port">:5173</span><svg class="arrow" viewBox="0 0 46 22"><use href="#arr"/></svg><span class="chip"><i></i>shop.localhost</span></div>
+  <div class="row" style="left:716px; top:196px; transform:rotate(1.6deg)"><span class="port">:8000</span><svg class="arrow" viewBox="0 0 46 22"><use href="#arr"/></svg><span class="chip"><i></i>api.localhost</span></div>
+  <div class="row" style="left:690px; top:308px; transform:rotate(-1.1deg)"><span class="port">:3001</span><svg class="arrow" viewBox="0 0 46 22"><use href="#arr"/></svg><span class="chip"><i></i>admin.localhost</span></div>
+  <div class="row" style="left:736px; top:420px; transform:rotate(2.2deg)"><span class="port">:5432</span><svg class="arrow" viewBox="0 0 46 22"><use href="#arr"/></svg><span class="chip"><i></i>db.localhost</span></div>
+</div>

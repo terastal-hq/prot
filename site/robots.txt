@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://prot.adityagupta.dev/sitemap.xml

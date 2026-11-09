@@ -262,7 +262,7 @@ a { color: inherit; }
   grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
   gap: 2vw;
   min-height: 100vh;
-  padding: 84px 3vw 120px 4vw;
+  padding: 70px 3vw 90px 4vw;
 }
 
 .top {
@@ -281,12 +281,12 @@ a { color: inherit; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4vh;
+  gap: 2.5vh;
 }
 
 .logo-wrap { line-height: 0; }
 .logo {
-  width: clamp(280px, min(36vw, 50vh), 720px);
+  width: clamp(260px, min(34vw, 40vh), 720px);
   height: auto;
   margin-left: -2.5vw;
   transform: rotate(-4.5deg);
@@ -314,7 +314,7 @@ a { color: inherit; }
 .install {
   position: relative;
   width: min(100%, 560px);
-  margin-top: clamp(170px, 24vh, 230px);
+  margin-top: clamp(120px, 15vh, 190px);
   transform: rotate(0.7deg);
 }
 .garg {
@@ -330,20 +330,14 @@ a { color: inherit; }
 }
 .tabs { display: flex; gap: 3px; margin-left: 10px; }
 .tab {
-  padding: 5px 16px 4px;
+  display: inline-block;
+  padding: 7px 16px 4px;
   font: 700 12px var(--font-mono);
-  color: var(--ash);
-  background: var(--metal-dk);
-  border: 2px solid;
-  border-color: var(--raised);
-  border-bottom: 0;
-  cursor: pointer;
-}
-.tab[aria-selected="true"] {
   color: #1a0a00;
   background: var(--gloss-orange);
+  border: 2px solid;
   border-color: #ffe0a8 #7a3a00 transparent #ffe0a8;
-  padding-top: 7px;
+  border-bottom: 0;
 }
 .cmd-well {
   display: flex;
@@ -368,6 +362,30 @@ a { color: inherit; }
 .cmd-well pre .l + .l::before { content: "$ "; color: var(--hazard); }
 .cmd-well pre .l:first-child::before { content: none; }
 .cmd-well .btn { flex: none; }
+
+/* package buttons: the app's orange gloss, each one a little off */
+.dls { display: flex; flex-wrap: wrap; gap: 14px 12px; margin: 22px 4px 0; }
+.dl {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 110px;
+  padding: 8px 12px 8px 10px;
+  color: #1a0a00;
+  text-decoration: none;
+  background: var(--gloss-orange);
+  border: 3px solid;
+  border-color: #ffe0a8 #7a3a00 #7a3a00 #ffe0a8;
+  outline: 1px solid var(--metal-lo);
+  box-shadow: 5px 6px 0 rgba(0, 0, 0, 0.55);
+  transform: rotate(var(--r, 0deg));
+}
+.dl:hover { filter: brightness(1.12); transform: rotate(var(--r, 0deg)) translateY(-2px); }
+.dl:active { border-color: #7a3a00 #ffe0a8 #ffe0a8 #7a3a00; transform: rotate(var(--r, 0deg)) translate(3px, 4px); box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55); }
+.dl svg { flex: none; width: 28px; height: 28px; fill: #1a0a00; }
+.dl span { display: flex; flex-direction: column; line-height: 1; }
+.dl b { font: 400 22px/1 var(--font-wordart); letter-spacing: 0.04em; text-transform: uppercase; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5); }
+.dl small { margin-top: 4px; font: 800 10px/1 var(--font-mono); letter-spacing: 0.08em; opacity: 0.75; }
 
 /* the exploded app */
 .hero-stage {

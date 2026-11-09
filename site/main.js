@@ -29,6 +29,7 @@
     [".logo", "drop", 0.05, 0],
     [".sub", "left", 0.35, 0],
     [".install", "left", 0.5, 0],
+    [".dl", "pop", 1.0, 0.1],
     [".garg", "pop", 0.9, 0],
     [".top .btn", "down", 0.6, 0.1],
     [".tape-a", "tape-l", 0, 0], [".tape-b", "tape-r", 0, 0], [".tape-c", "tape-l", 0, 0], [".tape-d", "tape-r", 0, 0],
@@ -110,28 +111,14 @@
 
   /* ---------------------------------------------------------------- install box */
 
-  const INSTALL = {
-    curl: ["curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash"],
-    aur: ["yay -S prot prot-desktop", "systemctl --user enable --now protd"],
-  };
+  const INSTALL = "curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash";
   {
     const pre = $("#cmd");
     const copy = $("#copy");
-    let which = "curl";
-    const show = (k) => {
-      which = k;
-      pre.innerHTML = INSTALL[k].map((l) => `<span class="l">${l}</span>`).join("\n");
-      copy.textContent = "Copy";
-      $$(".tab").forEach((t) => {
-        const on = t.dataset.cmd === k;
-        t.setAttribute("aria-selected", on);
-        t.tabIndex = on ? 0 : -1;
-      });
-    };
-    $$(".tab").forEach((t) => t.addEventListener("click", () => show(t.dataset.cmd)));
+    pre.textContent = INSTALL;
     copy.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(INSTALL[which].join("\n"));
+        await navigator.clipboard.writeText(INSTALL);
         copy.textContent = "Copied";
       } catch {
         const r = document.createRange();
@@ -141,7 +128,6 @@
         copy.textContent = "Select + Ctrl+C";
       }
     });
-    show("curl");
   }
 
   /* ---------------------------------------------------------------- the exploded app */
