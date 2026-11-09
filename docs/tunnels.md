@@ -12,14 +12,51 @@ prot tunnel add staging-db --host deploy@bastion.example.com --remote-port 5432 
 ## Before you add one
 
 `protd` runs `ssh` in the background with no terminal, so `ssh` can never ask you anything. Two things must
-already work without a prompt:
+already be settled:
 
-1. **Authentication.** Use a key held by `ssh-agent`, or an unencrypted key file (`--identity`). A password or a
-   key passphrase prompt is not possible and will fail.
+1. **How it authenticates.** Pick one:
+   - a key held by `ssh-agent` (best), or an unencrypted key file (`--identity`);
+   - a **password or key passphrase stored in your OS keyring** (see [Passwords](#passwords)).
 2. **The host key.** Connect to the host once yourself (`ssh deploy@bastion.example.com`) and accept its key, so it
-   is in `~/.ssh/known_hosts`. Otherwise the tunnel reports `Host key verification failed.`
+   is in `~/.ssh/known_hosts`. Otherwise the tunnel reports `Host key verification failed.` prot never accepts an
+   unknown host key on your behalf.
 
 Whatever `~/.ssh/config` says for the host (user, port, `ProxyJump`, identity) applies too.
+
+## Passwords
+
+```bash
+# typed without echo, or piped in; never a command-line flag, so it cannot show up in ps or shell history
+prot tunnel add legacy --host admin@10.0.0.7 --remote-port 8080 --password --auto-connect
+printf '%s\n' "$PASSWORD" | prot tunnel add legacy --host admin@10.0.0.7 --remote-port 8080 --password-stdin
+
+prot tunnel password legacy            # change it (asks twice); --stdin to pipe it in
+prot tunnel password legacy --clear    # back to keys and ssh-agent only
+```
+
+The desktop app has the same in the New Tunnel sheet and behind the key button on each tunnel.
+
+The secret is a login password or the passphrase of an encrypted key; `ssh` asks for both the same way.
+
+**Where it lives.** In the operating system's keyring: the Secret Service (GNOME Keyring, KWallet, KeePassXC...) on
+Linux, the Keychain on macOS. prot's own files and database only record that a password exists (`has_password`).
+It never appears in an API response, a log, the MCP tools, or on a command line. Deleting the tunnel removes it from
+the keyring.
+
+**No keyring, no password.** If no keyring service is running, adding a password fails with a clear error and saves
+nothing, rather than storing it somewhere weaker. Keys and `ssh-agent` keep working. If the keyring is locked
+(for example right after boot) the tunnel reports why and keeps retrying, and connects once you unlock it.
+
+**How `ssh` gets it.** For a tunnel with a password `protd` runs `ssh` with `SSH_ASKPASS_REQUIRE=force`, so `ssh`
+asks a helper instead of a terminal. The helper is `protd` itself in a one-shot mode (`PROT_ASKPASS=1`): it answers
+password and passphrase prompts, and **refuses everything else**, including "Are you sure you want to continue
+connecting (yes/no)?". A wrong password costs one attempt, not three (`NumberOfPasswordPrompts=1`), so it will not
+trip lockout tools such as fail2ban by itself.
+
+**What can read it.** The secret reaches `ssh` through that process's environment, readable only by your user (and
+root), not on a command line. Anything running as you can also ask the keyring for it while it is unlocked, and a
+`ProxyCommand` in your `ssh` config for that host would inherit the environment. A password is still weaker than a
+key: prefer `ssh-copy-id` and a key when you can.
 
 ## Commands
 
@@ -31,12 +68,15 @@ Whatever `~/.ssh/config` says for the host (user, port, `ProxyJump`, identity) a
 | `prot tunnel stop <id_or_alias>` | Disconnect (returns once `ssh` has exited) |
 | `prot tunnel rm <id_or_alias>` | Disconnect and delete |
 
+| `prot tunnel password <id_or_alias> [--stdin \| --clear]` | Set, replace or remove the stored password |
+
 `add` options: `--user`, `--remote-host` (default `127.0.0.1`), `--local-port` (default: a free port each time),
-`--identity`, `--ssh-port`, repeatable `--ssh-arg` for any other `ssh` argument, and `--auto-connect`.
+`--identity`, `--ssh-port`, repeatable `--ssh-arg` for any other `ssh` argument, `--password` /
+`--password-stdin`, and `--auto-connect`.
 
 The desktop app's Tunnels tab does the same with a form. Agents get `list_tunnels`, `start_tunnel` and
-`stop_tunnel` over MCP. There is deliberately no MCP tool to create one: that would let an agent open an SSH
-connection to an arbitrary host.
+`stop_tunnel` over MCP; they see `has_password` but can never read or set a password. There is deliberately no MCP
+tool to create a tunnel: that would let an agent open an SSH connection to an arbitrary host.
 
 ## How it behaves
 
@@ -52,8 +92,9 @@ connection to an arbitrary host.
   `prot tunnel ls`, the desktop app and `list_tunnels`.
 - **Restarts.** Tunnels are stored in `~/.prot/prot.db`. When `protd` starts it restores them and reconnects the
   ones marked `--auto-connect`. When `protd` stops it stops every tunnel, so no `ssh` process outlives it.
-- **Always non-interactive.** prot adds `-o BatchMode=yes -o ConnectTimeout=10` ahead of your own arguments.
-  `ssh` keeps the first value it sees for an option, so `--ssh-arg` cannot turn prompting back on.
+- **Always non-interactive.** prot adds `-o BatchMode=yes -o ConnectTimeout=10` ahead of your own arguments
+  (tunnels with a password use the askpass helper instead of `BatchMode`, see above). `ssh` keeps the first value
+  it sees for an option, so `--ssh-arg` cannot turn prompting back on.
 
 ## If `protd` is killed
 
@@ -63,6 +104,8 @@ fail with `address already in use`; stop the leftover with `pkill -f 'ssh -N -L'
 
 ## REST API
 
-`GET/POST /v1/tunnels`, `DELETE /v1/tunnels/{id}`, `POST /v1/tunnels/{id}/start`, `POST /v1/tunnels/{id}/stop`.
-`{id}` is the tunnel's id or its alias. Errors use the usual statuses: 400 invalid alias or field, 404 unknown
-tunnel, 409 alias already used, 501 when `ssh` is not installed. See [openapi.yaml](../schemas/openapi.yaml).
+`GET/POST /v1/tunnels`, `DELETE /v1/tunnels/{id}`, `POST /v1/tunnels/{id}/start`, `POST /v1/tunnels/{id}/stop`,
+`PUT/DELETE /v1/tunnels/{id}/password`. `{id}` is the tunnel's id or its alias. `POST` accepts an optional
+write-only `password`. Errors use the usual statuses: 400 invalid alias, field or password, 404 unknown tunnel,
+409 alias already used, 501 when `ssh` is not installed or a password was given without a keyring. See
+[openapi.yaml](../schemas/openapi.yaml).

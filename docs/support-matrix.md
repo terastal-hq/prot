@@ -31,8 +31,8 @@
 - **LAN Sharing Policy:** Routes are private (loopback-only) by default. LAN exposure must be explicitly enabled per route.
 
 ### C. SSH Tunnel Supervision (`internal/tunnels`)
-- **Credential Safety:** Prot never touches or stores raw SSH private keys or passwords in databases. It invokes OpenSSH (`/usr/bin/ssh`) to leverage `~/.ssh/config` and the user's running `ssh-agent`. A tunnel stores only the path of an identity file.
-- **Non-interactive:** `ssh` runs with `BatchMode=yes` and `ConnectTimeout=10` (before user arguments, so they cannot override them). Keys must work unattended and the host key must already be trusted.
+- **Credential Safety:** Prot never touches or stores raw SSH private keys, and never puts a password in its database or files. It invokes OpenSSH (`/usr/bin/ssh`) to leverage `~/.ssh/config` and the user's running `ssh-agent`. A tunnel stores only the path of an identity file. An optional password or key passphrase lives in the OS keyring (Secret Service on Linux, Keychain on macOS) and is handed to `ssh` through an askpass helper that answers only password prompts, never host-key questions.
+- **Non-interactive:** `ssh` runs with `BatchMode=yes` and `ConnectTimeout=10` (before user arguments, so they cannot override them), or through the askpass helper when a password is stored. Keys must work unattended and the host key must already be trusted.
 - **Readiness Verification:** Probes local forwarded port before transitioning state to `connected`.
 - **Auto-Recovery:** Exponential backoff reconnection loop (0.5s to 15s) on failed attempts and unexpected disconnects.
 - **Diagnostics:** The tail of `ssh`'s stderr is kept as the tunnel's last error.
