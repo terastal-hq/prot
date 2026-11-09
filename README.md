@@ -1,9 +1,10 @@
 <h1 align="center">
-  <img src="docs/assets/prot-logo.png" alt="prot" width="420" />
+  <img src="docs/assets/prot-logo.png" alt="prot" width="320" />
 </h1>
 
-> **Your development servers, under control.**  
-> Local-first · Cross-platform ambition · Agent-native · Open API
+<p align="center">
+  <b>Stable <code>.localhost</code> URLs and one control plane for all your development servers.</b>
+</p>
 
 Prot is a local-first developer utility and control plane that discovers, organizes, routes, and manages development services, whether they run locally or through remote SSH connections.
 
