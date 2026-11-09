@@ -116,3 +116,29 @@ func TestSecurityMiddleware(t *testing.T) {
 		t.Errorf("expected 200 OK for /v1/health, got %d", rec.Code)
 	}
 }
+
+// If the token cannot be created the authenticator must refuse to exist, and an empty token never authenticates.
+func TestAuthenticatorFailsClosed(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The token directory would have to be created underneath a regular file.
+	if _, err := NewAuthenticator(Config{TokenPath: filepath.Join(blocker, "auth.token")}); err == nil {
+		t.Error("expected an error when the token cannot be created")
+	}
+
+	auth, err := NewAuthenticator(Config{TokenPath: filepath.Join(t.TempDir(), "auth.token")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{"", "   ", "wrong"} {
+		if auth.VerifyToken(candidate) {
+			t.Errorf("VerifyToken(%q) must be false", candidate)
+		}
+	}
+	if !auth.VerifyToken(auth.Token()) {
+		t.Error("the real token must verify")
+	}
+}

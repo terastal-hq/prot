@@ -16,24 +16,19 @@ import (
 
 // Authenticator provides token-based authentication and loopback verification.
 type Authenticator struct {
-	mu         sync.RWMutex
-	token      string
-	tokenPath  string
-	allowEmpty bool
+	mu        sync.RWMutex
+	token     string
+	tokenPath string
 }
 
 // Config configures security rules.
 type Config struct {
-	TokenPath  string // Custom path for token file, e.g. ~/.prot/auth.token
-	AllowEmpty bool   // For development/testing only
+	TokenPath string // Custom path for token file, e.g. ~/.prot/auth.token
 }
 
 // NewAuthenticator creates or loads an authentication token.
 func NewAuthenticator(cfg Config) (*Authenticator, error) {
-	auth := &Authenticator{
-		tokenPath:  cfg.TokenPath,
-		allowEmpty: cfg.AllowEmpty,
-	}
+	auth := &Authenticator{tokenPath: cfg.TokenPath}
 
 	if cfg.TokenPath == "" {
 		home, err := os.UserHomeDir()
@@ -43,10 +38,8 @@ func NewAuthenticator(cfg Config) (*Authenticator, error) {
 		auth.tokenPath = filepath.Join(home, ".prot", "auth.token")
 	}
 
+	// Fail closed: without a usable token the management API must not start at all.
 	if err := auth.ensureToken(); err != nil {
-		if cfg.AllowEmpty {
-			return auth, nil
-		}
 		return nil, err
 	}
 
@@ -94,10 +87,6 @@ func (a *Authenticator) ensureToken() error {
 func (a *Authenticator) VerifyToken(candidate string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-
-	if a.token == "" && a.allowEmpty {
-		return true
-	}
 
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
