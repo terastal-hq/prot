@@ -136,7 +136,8 @@ func TestMCPBridgeSharesStateWithDaemon(t *testing.T) {
 	if text, isErr := session.tool("start_service", `{"id_or_alias":"shared"}`); isErr {
 		t.Fatalf("restart via agent: %s", text)
 	}
-	if text, isErr := session.tool("stop_service", `{"id_or_alias":"shared"}`); isErr || !strings.Contains(text, "Stopped") {
+	text, isErr := session.tool("stop_service", `{"id_or_alias":"shared"}`)
+	if isErr || !strings.Contains(text, "Stopped") {
 		t.Errorf("agent stop: %q (err=%v)", text, isErr)
 	}
 }

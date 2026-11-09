@@ -94,7 +94,14 @@ Add to your MCP configuration file (e.g. `claude_desktop_config.json`):
 }
 ```
 
+`prot mcp` is a thin bridge: it relays each message to the running `protd` over the authenticated loopback API,
+so agents see the same services, logs and process state as the CLI and the desktop app. Processes an agent starts
+belong to the daemon and keep running when the agent disconnects. If `protd` is not running, tool calls fail with
+a clear error until it is (`systemctl --user start protd`).
+
 ### Available MCP Tools
+
+Tools that target a service take `id_or_alias`.
 
 - `list_services`: Discover available local services.
 - `get_service`: Read service state and launch configuration.
@@ -102,7 +109,7 @@ Add to your MCP configuration file (e.g. `claude_desktop_config.json`):
 - `get_service_logs`: Retrieve bounded recent stdout/stderr logs.
 - `ensure_running`: Idempotently start a required service if not running.
 - `start_service`, `stop_service`, `restart_service`: Process controls.
-- `set_alias`: Manage dynamic proxy aliases.
+- `set_alias`: Change a service's `.localhost` alias (takes `id_or_alias` and `alias`).
 
 <img src="docs/assets/headings/documentation.svg" alt="Documentation" />
 

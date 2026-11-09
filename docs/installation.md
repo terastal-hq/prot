@@ -201,5 +201,8 @@ Add this to your MCP settings file (e.g. `claude_desktop_config.json`):
 }
 ```
 
+`prot mcp` forwards every request to the running daemon, so `protd` must be running
+(`systemctl --user status protd`). Services an agent starts are owned by the daemon, not by the agent session.
+
 Or connect via loopback HTTP at:
 `http://127.0.0.1:4400/mcp` (Bearer token located at `~/.prot/auth.token`).
