@@ -61,6 +61,8 @@ type Registry struct {
 	discovered  map[string]discovery.ProcessService
 	gatewayHost string
 
+	tunnelRegMu sync.Mutex // serialises tunnel registration so two requests cannot claim one alias
+
 	subMu       sync.RWMutex
 	subscribers map[chan Event]struct{}
 }
@@ -87,6 +89,9 @@ func New(cfg Config) *Registry {
 	r.supervisor = supervisor.New(func(serviceID, status string, port uint32) {
 		r.handleSupervisorStatus(serviceID, status, port)
 	})
+	if r.tunnels != nil {
+		r.tunnels.SetObserver(r.handleTunnelState)
+	}
 
 	return r
 }
@@ -234,11 +239,7 @@ func (r *Registry) toServiceView(s storage.Service) ServiceView {
 	}
 
 	if view.Alias != "" {
-		if r.gatewayHost != "" {
-			view.CanonicalURL = fmt.Sprintf("http://%s.localhost:%s", view.Alias, r.gatewayHost)
-		} else {
-			view.CanonicalURL = fmt.Sprintf("http://%s.localhost", view.Alias)
-		}
+		view.CanonicalURL = r.canonicalURL(view.Alias)
 	}
 
 	return view
@@ -283,8 +284,8 @@ var (
 	// ErrInvalidAlias is returned when an alias is not a valid DNS label.
 	ErrInvalidAlias = errors.New("alias must be 1-63 characters: lowercase letters, digits and hyphens, " +
 		"not starting or ending with a hyphen")
-	// ErrAliasTaken is returned when another service already uses the alias.
-	ErrAliasTaken = errors.New("alias is already used by another service")
+	// ErrAliasTaken is returned when another service or tunnel already uses the alias.
+	ErrAliasTaken = errors.New("alias is already used by another service or tunnel")
 	// ErrInvalidField is returned for any other rejected field value.
 	ErrInvalidField = errors.New("invalid field")
 )
@@ -393,6 +394,9 @@ func (r *Registry) UpdateService(ctx context.Context, idOrAlias string, patch Se
 	oldAlias := svc.Alias
 	if err := applyPatch(svc, patch, all); err != nil {
 		return nil, err
+	}
+	if patch.Alias != nil && r.aliasInUseByTunnel(svc.Alias, "") {
+		return nil, ErrAliasTaken
 	}
 	if err := r.db.SaveService(ctx, *svc); err != nil {
 		return nil, fmt.Errorf("saving service: %w", err)
