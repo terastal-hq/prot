@@ -284,9 +284,16 @@ a { color: inherit; }
   gap: 2.5vh;
 }
 
-.logo-wrap { line-height: 0; }
+/* the logo and the mascot stand side by side; the mascot is sized from the logo */
+.brand {
+  --lw: clamp(260px, min(34vw, 40vh), 720px);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+.logo-wrap { line-height: 0; flex: none; }
 .logo {
-  width: clamp(260px, min(34vw, 40vh), 720px);
+  width: var(--lw);
   height: auto;
   margin-left: -2.5vw;
   transform: rotate(-4.5deg);
@@ -314,15 +321,14 @@ a { color: inherit; }
 .install {
   position: relative;
   width: min(100%, 560px);
-  margin-top: clamp(120px, 15vh, 190px);
+  margin-top: clamp(20px, 5vh, 56px);
   transform: rotate(0.7deg);
 }
 .garg {
-  position: absolute;
-  right: 3%;
-  bottom: calc(100% - 44px);
-  width: clamp(150px, 14vw, 210px);
+  flex: none;
+  width: calc(var(--lw) * 0.56);
   height: auto;
+  margin: 0 0 2% calc(var(--lw) * -0.06);
   transform: rotate(3deg);
   transform-origin: 50% 100%;
   filter: drop-shadow(6px 8px 0 rgba(0, 0, 0, 0.5));
@@ -362,15 +368,20 @@ a { color: inherit; }
 .cmd-well pre .l + .l::before { content: "$ "; color: var(--hazard); }
 .cmd-well pre .l:first-child::before { content: none; }
 .cmd-well .btn { flex: none; }
+.copy { width: 44px; padding: 0; }
+.copy svg { width: 22px; height: 22px; fill: none; stroke: #1a0a00; stroke-width: 2.4; stroke-linecap: square; stroke-linejoin: miter; }
+.copy .i-done { display: none; }
+.copy.done .i-copy { display: none; }
+.copy.done .i-done { display: block; }
 
 /* package buttons: the app's orange gloss, each one a little off */
-.dls { display: flex; flex-wrap: wrap; gap: 14px 12px; margin: 22px 4px 0; }
+.dls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 11px; margin: 22px 4px 0; }
 .dl {
   display: flex;
   align-items: center;
-  gap: 9px;
-  flex: 1 1 110px;
-  padding: 8px 12px 8px 10px;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 8px 8px 8px;
   color: #1a0a00;
   text-decoration: none;
   background: var(--gloss-orange);
@@ -382,9 +393,9 @@ a { color: inherit; }
 }
 .dl:hover { filter: brightness(1.12); transform: rotate(var(--r, 0deg)) translateY(-2px); }
 .dl:active { border-color: #7a3a00 #ffe0a8 #ffe0a8 #7a3a00; transform: rotate(var(--r, 0deg)) translate(3px, 4px); box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55); }
-.dl svg { flex: none; width: 28px; height: 28px; fill: #1a0a00; }
+.dl svg { flex: none; width: 24px; height: 24px; fill: #1a0a00; }
 .dl span { display: flex; flex-direction: column; line-height: 1; }
-.dl b { font: 400 22px/1 var(--font-wordart); letter-spacing: 0.04em; text-transform: uppercase; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5); }
+.dl b { font: 400 19px/1 var(--font-wordart); letter-spacing: 0.04em; text-transform: uppercase; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5); }
 .dl small { margin-top: 4px; font: 800 10px/1 var(--font-mono); letter-spacing: 0.08em; opacity: 0.75; }
 
 /* the exploded app */
@@ -928,7 +939,8 @@ a { color: inherit; }
   .hero { grid-template-columns: minmax(0, 1fr); padding-top: 70px; min-height: 0; }
   .hero-left, .hero-stage { min-width: 0; }
   .hero-stage { margin-top: 30px; }
-  .logo { width: min(80vw, 400px); margin-left: -2vw; }
+  .brand { --lw: min(62vw, 400px); }
+  .logo { margin-left: -2vw; }
   .sub { max-width: none; margin-right: 2vw; }
   .cap-names { margin-bottom: 3vh; }
   .crash { grid-template-columns: 1fr; padding-top: 10vh; }
@@ -957,6 +969,7 @@ a { color: inherit; }
 }
 
 @media (max-width: 560px) {
+  .dls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .win-body { font-size: 11px; overflow-x: auto; }
   .desk .win { overflow: hidden; }
   .cmd-well { flex-direction: column; align-items: stretch; }

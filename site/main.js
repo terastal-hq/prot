@@ -30,7 +30,7 @@
     [".sub", "left", 0.35, 0],
     [".install", "left", 0.5, 0],
     [".dl", "pop", 1.0, 0.1],
-    [".garg", "pop", 0.9, 0],
+    [".garg", "pop", 0.7, 0],
     [".top .btn", "down", 0.6, 0.1],
     [".tape-a", "tape-l", 0, 0], [".tape-b", "tape-r", 0, 0], [".tape-c", "tape-l", 0, 0], [".tape-d", "tape-r", 0, 0],
     [".tape-e", "tape-l", 0, 0],
@@ -111,21 +111,33 @@
 
   /* ---------------------------------------------------------------- install box */
 
-  const INSTALL = "curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash";
+  const INSTALL = "curl -fsSL https://prot.adityagupta.dev/install | bash";
   {
     const pre = $("#cmd");
     const copy = $("#copy");
     pre.textContent = INSTALL;
+    let reset = 0;
+    const flash = (label) => {
+      copy.classList.add("done");
+      copy.title = label;
+      copy.setAttribute("aria-label", label);
+      clearTimeout(reset);
+      reset = setTimeout(() => {
+        copy.classList.remove("done");
+        copy.title = "Copy";
+        copy.setAttribute("aria-label", "Copy the install command");
+      }, 2000);
+    };
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(INSTALL);
-        copy.textContent = "Copied";
+        flash("Copied");
       } catch {
         const r = document.createRange();
         r.selectNodeContents(pre);
         getSelection().removeAllRanges();
         getSelection().addRange(r);
-        copy.textContent = "Select + Ctrl+C";
+        flash("Selected: press Ctrl+C");
       }
     });
   }
