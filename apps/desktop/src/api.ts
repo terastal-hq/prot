@@ -155,6 +155,17 @@ export class ProtClient {
     return this.request<TunnelStatus>(`/v1/tunnels/${id}/stop`, { method: "POST" });
   }
 
+  async setTunnelPassword(id: string, password: string): Promise<TunnelStatus> {
+    return this.request<TunnelStatus>(`/v1/tunnels/${id}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ password }),
+    });
+  }
+
+  async clearTunnelPassword(id: string): Promise<TunnelStatus> {
+    return this.request<TunnelStatus>(`/v1/tunnels/${id}/password`, { method: "DELETE" });
+  }
+
   async deleteTunnel(id: string): Promise<void> {
     return this.request<void>(`/v1/tunnels/${id}`, { method: "DELETE" });
   }

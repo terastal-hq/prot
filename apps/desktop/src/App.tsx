@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Minus, Plus, Copy, Check, X } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Minus, Plus, Copy, Check, X, KeyRound } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
@@ -297,6 +297,11 @@ export function App() {
   const [tunIdentity, setTunIdentity] = useState("");
   const [tunSshPort, setTunSshPort] = useState("");
   const [tunAuto, setTunAuto] = useState(true);
+  const [tunPassword, setTunPassword] = useState("");
+
+  // Tunnel password sheet
+  const [pwTunnel, setPwTunnel] = useState<TunnelStatus | null>(null);
+  const [pwValue, setPwValue] = useState("");
 
   // Adopt sheet
   const [adopting, setAdopting] = useState<DiscoveredProcess | null>(null);
@@ -453,6 +458,31 @@ export function App() {
     run(() => client.deleteService(id));
   };
 
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pwTunnel) return;
+    try {
+      await client.setTunnelPassword(pwTunnel.config.id, pwValue);
+      setPwTunnel(null);
+      setPwValue("");
+      await refreshData();
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  const handleClearPassword = async () => {
+    if (!pwTunnel) return;
+    try {
+      await client.clearTunnelPassword(pwTunnel.config.id);
+      setPwTunnel(null);
+      setPwValue("");
+      await refreshData();
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const handleDeleteTunnel = (id: string) => {
     if (armedDelete !== id) {
       setArmedDelete(id);
@@ -497,6 +527,7 @@ export function App() {
     setTunIdentity("");
     setTunSshPort("");
     setTunAuto(true);
+    setTunPassword("");
   };
 
   const handleCreateTunnel = async (e: React.FormEvent) => {
@@ -516,6 +547,7 @@ export function App() {
         identity_file: tunIdentity.trim() || undefined,
         extra_args: tunSshPort ? ["-p", String(parseInt(tunSshPort, 10))] : [],
         auto_connect: tunAuto,
+        password: tunPassword || undefined,
       });
       setShowAddTunnel(false);
       resetTunnelForm();
@@ -831,6 +863,11 @@ export function App() {
                     </code>
                     <span className="port">:{t.assigned_local_port || t.config.local_port || "auto"}</span>
                   </div>
+                  {t.config.has_password && (
+                    <div className="auth-tag">
+                      <KeyRound size={12} strokeWidth={2.5} /> PASSWORD IN OS KEYRING
+                    </div>
+                  )}
                   <div className="url-row">
                     <a className="card-url" href={url} target="_blank" rel="noreferrer">
                       {splitUrlPort(url).map((part, i) => (
@@ -859,6 +896,16 @@ export function App() {
                         <Play size={14} strokeWidth={2.5} />
                       </button>
                     )}
+                    <button
+                      className="icon-btn"
+                      title={t.config.has_password ? "Change or remove the password" : "Set a password"}
+                      onClick={() => {
+                        setPwValue("");
+                        setPwTunnel(t);
+                      }}
+                    >
+                      <KeyRound size={14} strokeWidth={2.5} />
+                    </button>
                     <span className="spacer" />
                     <button
                       className={`icon-btn danger ${armedDelete === t.config.id ? "armed" : ""}`}
@@ -971,6 +1018,47 @@ export function App() {
         </div>
       )}
 
+      {/* Tunnel password sheet */}
+      {pwTunnel && (
+        <form className="sheet" onSubmit={handleSavePassword}>
+          <div className="sheet-head">
+            <h2>{pwTunnel.config.alias} password</h2>
+            <button type="button" className="icon-btn" onClick={() => setPwTunnel(null)} aria-label="Close">
+              <X size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="sheet-body">
+            <Field
+              label={pwTunnel.config.has_password ? "New password or passphrase" : "Password or passphrase"}
+              type="password"
+              required
+              autoFocus
+              prompt="*"
+              placeholder="kept in your OS keyring"
+              value={pwValue}
+              onChange={setPwValue}
+            />
+            <p className="dim">
+              Used from the next connection attempt; a tunnel that is retrying picks it up by itself. It is stored in the
+              OS keyring and never shown again.
+            </p>
+          </div>
+          <div className="sheet-foot">
+            {pwTunnel.config.has_password && (
+              <button type="button" className="btn btn-danger" onClick={handleClearPassword}>
+                Remove password
+              </button>
+            )}
+            <button type="button" className="btn" onClick={() => setPwTunnel(null)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* New tunnel sheet */}
       {showAddTunnel && (
         <form className="sheet" onSubmit={handleCreateTunnel}>
@@ -992,13 +1080,22 @@ export function App() {
               <Field label="SSH port" type="number" placeholder="22" prompt=":" value={tunSshPort} onChange={setTunSshPort} />
             </div>
             <Field label="Identity file" placeholder="~/.ssh/id_ed25519" prompt="/" value={tunIdentity} onChange={setTunIdentity} />
+            <Field
+              label="Password or key passphrase (optional)"
+              type="password"
+              placeholder="kept in your OS keyring"
+              prompt="*"
+              value={tunPassword}
+              onChange={setTunPassword}
+            />
             <label className="check">
               <input type="checkbox" checked={tunAuto} onChange={(e) => setTunAuto(e.target.checked)} />
               Connect now, and whenever protd starts
             </label>
             <p className="dim">
-              ssh runs without a terminal: use a key from ssh-agent or an unencrypted key, and connect to the host once
-              from a terminal first so ssh trusts its host key.
+              ssh runs without a terminal, so it cannot ask. Use a key from ssh-agent, or store a password or passphrase
+              here (kept in the OS keyring, never in prot&apos;s files). Connect to the host once from a terminal first so
+              ssh trusts its host key.
             </p>
           </div>
           <div className="sheet-foot">

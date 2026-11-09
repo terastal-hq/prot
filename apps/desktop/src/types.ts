@@ -53,6 +53,8 @@ export interface TunnelStatus {
     identity_file?: string;
     extra_args?: string[];
     auto_connect: boolean;
+    /** A password or key passphrase is kept in the OS keyring. The secret itself is never sent to the app. */
+    has_password: boolean;
   };
   canonical_url?: string;
   state: "disconnected" | "connecting" | "connected" | "reconnecting" | "failed";
@@ -72,6 +74,8 @@ export interface NewTunnel {
   identity_file?: string;
   extra_args?: string[];
   auto_connect: boolean;
+  /** Write-only: stored in the OS keyring, never returned. */
+  password?: string;
 }
 
 export interface DaemonHealth {

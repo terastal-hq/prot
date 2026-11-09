@@ -1300,6 +1300,18 @@ code {
 }
 
 /* shown on a card after a restart-only setting was changed on a live server */
+.auth-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
 .card-error {
   font-family: var(--font-mono);
   font-size: 11px;
