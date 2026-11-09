@@ -10,8 +10,8 @@ import (
 )
 
 // The test binary doubles as a fake ssh: when PROT_FAKE_SSH is set, TestMain runs fakeSSH instead of the tests.
-// Modes: "listen" opens the -L local port and stays up, "exit" fails immediately, "silent" stays up without ever
-// opening the port.
+// Modes: "denied" fails like a refused key, "listen" opens the -L local port and stays up, "exit" fails
+// immediately, "silent" stays up without ever opening the port.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("PROT_FAKE_SSH"); mode != "" {
 		os.Exit(fakeSSH(mode, os.Args[1:]))
@@ -20,7 +20,14 @@ func TestMain(m *testing.M) {
 }
 
 func fakeSSH(mode string, args []string) int {
+	if path := os.Getenv("PROT_FAKE_SSH_ARGS"); path != "" {
+		_ = os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o600)
+	}
 	switch mode {
+	case "denied":
+		fmt.Fprintln(os.Stderr, "Warning: Permanently added host")
+		fmt.Fprintln(os.Stderr, "user@host: Permission denied (publickey).")
+		return 255
 	case "exit":
 		fmt.Fprintln(os.Stderr, "ssh: Could not resolve hostname")
 		return 255

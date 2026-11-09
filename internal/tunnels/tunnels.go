@@ -50,12 +50,17 @@ type TunnelStatus struct {
 }
 
 type supervisedTunnel struct {
+	ctl        sync.Mutex // serialises Start, Stop and Remove for this tunnel
 	cfg        TunnelConfig
 	status     TunnelStatus
 	cancel     context.CancelFunc
 	cmd        *exec.Cmd
 	desiredRun bool
+	done       chan struct{} // closed when the supervise loop has fully exited
 }
+
+// ErrNotFound is returned for an unknown tunnel id.
+var ErrNotFound = errors.New("tunnel not found")
 
 // Manager supervises and monitors OpenSSH forwarding tunnels.
 type Manager struct {
@@ -63,11 +68,13 @@ type Manager struct {
 	tunnels      map[string]*supervisedTunnel
 	sshPath      string
 	readyTimeout time.Duration // how long to wait for the local forward to open
+	observer     func(TunnelStatus)
 }
 
 // Timing for tunnel supervision.
 const (
-	defaultReadyTimeout = 3 * time.Second
+	defaultReadyTimeout = 15 * time.Second // covers DNS, the TCP connect (ConnectTimeout) and key exchange
+	stopWait            = 5 * time.Second  // how long Stop waits for the supervise loop and ssh to exit
 	initialBackoff      = 500 * time.Millisecond
 	maxBackoff          = 15 * time.Second
 	stableConnection    = 30 * time.Second // a connection this long resets the reconnect backoff
@@ -80,6 +87,30 @@ func NewManager() (*Manager, error) {
 		return nil, fmt.Errorf("ssh binary not found in PATH: %w", err)
 	}
 	return newManager(sshPath), nil
+}
+
+// NewManagerWithSSH is like NewManager but uses the given ssh binary instead of searching PATH.
+func NewManagerWithSSH(sshPath string) *Manager {
+	return newManager(sshPath)
+}
+
+// SetObserver registers a callback invoked (without any manager lock held) whenever a tunnel changes state. It
+// must be set before tunnels are started.
+func (m *Manager) SetObserver(fn func(TunnelStatus)) {
+	m.mu.Lock()
+	m.observer = fn
+	m.mu.Unlock()
+}
+
+// emit reports the tunnel's current status to the observer.
+func (m *Manager) emit(st *supervisedTunnel) {
+	m.mu.RLock()
+	fn := m.observer
+	status := st.status
+	m.mu.RUnlock()
+	if fn != nil {
+		fn(status)
+	}
 }
 
 func newManager(sshPath string) *Manager {
@@ -128,15 +159,28 @@ func (m *Manager) Register(cfg TunnelConfig) (*TunnelStatus, error) {
 	return &statusCopy, nil
 }
 
-// Start begins supervising an SSH tunnel connection.
-func (m *Manager) Start(ctx context.Context, id string) (*TunnelStatus, error) {
-	m.mu.Lock()
-	st, exists := m.tunnels[id]
-	if !exists {
-		m.mu.Unlock()
-		return nil, fmt.Errorf("tunnel %q not found", id)
+func (m *Manager) lookup(id string) (*supervisedTunnel, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	st, ok := m.tunnels[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrNotFound, id)
 	}
-	if st.status.State == StateConnected || st.status.State == StateConnecting {
+	return st, nil
+}
+
+// Start begins supervising an SSH tunnel connection. Starting a tunnel that is already connecting or connected
+// returns its current status.
+func (m *Manager) Start(_ context.Context, id string) (*TunnelStatus, error) {
+	st, err := m.lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	st.ctl.Lock()
+	defer st.ctl.Unlock()
+
+	m.mu.Lock()
+	if st.desiredRun {
 		statusCopy := st.status
 		m.mu.Unlock()
 		return &statusCopy, nil
@@ -145,40 +189,93 @@ func (m *Manager) Start(ctx context.Context, id string) (*TunnelStatus, error) {
 	st.desiredRun = true
 	tunnelCtx, cancel := context.WithCancel(context.Background())
 	st.cancel = cancel
+	done := make(chan struct{})
+	st.done = done
 	st.status.State = StateConnecting
 	st.status.LastError = ""
 	statusCopy := st.status
 	m.mu.Unlock()
 
-	go m.superviseLoop(tunnelCtx, st)
+	go func() {
+		defer close(done)
+		m.superviseLoop(tunnelCtx, st)
+	}()
 
+	m.emit(st)
 	return &statusCopy, nil
 }
 
-// Stop gracefully shuts down a supervised tunnel.
+// Stop shuts a tunnel down and waits for its ssh process to exit. Stopping a stopped tunnel is a no-op.
 func (m *Manager) Stop(id string) error {
-	m.mu.Lock()
-	st, exists := m.tunnels[id]
-	if !exists {
-		m.mu.Unlock()
-		return fmt.Errorf("tunnel %q not found", id)
+	st, err := m.lookup(id)
+	if err != nil {
+		return err
 	}
+	m.stop(st)
+	return nil
+}
 
+func (m *Manager) stop(st *supervisedTunnel) {
+	st.ctl.Lock()
+	defer st.ctl.Unlock()
+
+	m.mu.Lock()
 	st.desiredRun = false
 	if st.cancel != nil {
-		st.cancel()
+		st.cancel() // exec.CommandContext kills the ssh process
 		st.cancel = nil
 	}
+	done := st.done
+	st.done = nil
+	m.mu.Unlock()
 
-	if st.cmd != nil && st.cmd.Process != nil {
-		_ = st.cmd.Process.Signal(syscall.SIGTERM)
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(stopWait):
+		}
 	}
 
+	m.mu.Lock()
 	st.status.State = StateDisconnected
 	st.status.PID = 0
 	st.status.ConnectedAt = nil
 	m.mu.Unlock()
+	m.emit(st)
+}
 
+// StopAll stops every tunnel in parallel and waits for them. The daemon calls it on shutdown so no ssh process
+// outlives it.
+func (m *Manager) StopAll() {
+	m.mu.RLock()
+	all := make([]*supervisedTunnel, 0, len(m.tunnels))
+	for _, st := range m.tunnels {
+		all = append(all, st)
+	}
+	m.mu.RUnlock()
+
+	var wg sync.WaitGroup
+	for _, st := range all {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.stop(st)
+		}()
+	}
+	wg.Wait()
+}
+
+// Remove stops a tunnel and forgets it.
+func (m *Manager) Remove(id string) error {
+	st, err := m.lookup(id)
+	if err != nil {
+		return err
+	}
+	m.stop(st)
+
+	m.mu.Lock()
+	delete(m.tunnels, id)
+	m.mu.Unlock()
 	return nil
 }
 
@@ -234,6 +331,7 @@ func (m *Manager) superviseLoop(ctx context.Context, st *supervisedTunnel) {
 		st.status.State = StateReconnecting
 		st.status.Reconnections++
 		m.mu.Unlock()
+		m.emit(st)
 
 		select {
 		case <-time.After(backoff):
@@ -261,9 +359,14 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 		target = fmt.Sprintf("%s@%s", st.cfg.SSHUser, st.cfg.SSHHost)
 	}
 
+	// The daemon has no terminal, so ssh must never wait for a password, passphrase or host-key answer: with
+	// BatchMode it fails at once and says why on stderr. These come before ExtraArgs on purpose: for -o options
+	// ssh keeps the first value it sees, so a tunnel cannot turn prompting back on.
 	args := []string{
 		"-N", // Do not execute remote command
 		"-L", forwardSpec,
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=10",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=3",
@@ -277,6 +380,8 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 
 	cmd := exec.CommandContext(ctx, m.sshPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stderr := &tailBuffer{}
+	cmd.Stderr = stderr // ssh says why it failed here; keep the tail for the status instead of discarding it
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting ssh process: %w", err)
@@ -301,7 +406,7 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 
 	select {
 	case err := <-exited:
-		return fmt.Errorf("ssh exited before the tunnel was ready: %w", exitReason(err))
+		return withOutput(fmt.Errorf("ssh exited before the tunnel was ready: %w", exitReason(err)), stderr)
 	case ok := <-ready:
 		if !ok {
 			_ = cmd.Process.Kill()
@@ -309,23 +414,82 @@ func (m *Manager) runOnce(ctx context.Context, st *supervisedTunnel) error {
 			if ctx.Err() != nil {
 				return nil // stopped while connecting
 			}
-			return fmt.Errorf("local port %d did not open within %s", localPort, m.readyTimeout)
+			return withOutput(fmt.Errorf("local port %d did not open within %s", localPort, m.readyTimeout), stderr)
 		}
 	}
 
 	now := time.Now().UTC()
 	m.mu.Lock()
-	if ctx.Err() == nil { // Stop may have run while we waited; do not resurrect a stopped tunnel
+	connected := ctx.Err() == nil // Stop may have run while we waited; do not resurrect a stopped tunnel
+	if connected {
 		st.status.State = StateConnected
 		st.status.ConnectedAt = &now
 	}
 	m.mu.Unlock()
+	if connected {
+		m.emit(st)
+	}
 
 	err := <-exited
 	if err != nil && ctx.Err() == nil {
-		return fmt.Errorf("ssh session ended: %w", err)
+		return withOutput(fmt.Errorf("ssh session ended: %w", err), stderr)
 	}
 	return nil
+}
+
+// tailBuffer is an io.Writer that keeps only the end of what is written to it (ssh's stderr).
+type tailBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+const tailLimit = 2048
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > tailLimit {
+		t.buf = t.buf[len(t.buf)-tailLimit:]
+	}
+	return len(p), nil
+}
+
+// summary returns the last few non-empty lines on one line, with control characters removed.
+func (t *tailBuffer) summary() string {
+	t.mu.Lock()
+	text := string(t.buf)
+	t.mu.Unlock()
+
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.Map(func(r rune) rune {
+			if r < 32 || r == 127 {
+				return -1
+			}
+			return r
+		}, strings.TrimSpace(line))
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > 3 {
+		lines = lines[len(lines)-3:]
+	}
+	out := strings.Join(lines, " | ")
+	if len(out) > 300 {
+		out = out[:297] + "..."
+	}
+	return out
+}
+
+// withOutput appends ssh's own explanation to err, so the status says "Permission denied (publickey)" rather
+// than just "exit status 255".
+func withOutput(err error, stderr *tailBuffer) error {
+	if out := stderr.summary(); out != "" {
+		return fmt.Errorf("%w: %s", err, out)
+	}
+	return err
 }
 
 // clearProcess forgets the finished ssh process.
