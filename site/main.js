@@ -25,6 +25,7 @@
 
   // [selector, direction, first delay in seconds, step between siblings]. Direction names are styled in style.css.
   const ENTRANCES = [
+    [".cap", "up", 0.1, 0],
     [".logo", "drop", 0.05, 0],
     [".sub", "left", 0.35, 0],
     [".install", "left", 0.5, 0],
@@ -83,6 +84,28 @@
       count.textContent = "0";
       requestAnimationFrame(tick);
     }, 0.3);
+  }
+
+  /* ---------------------------------------------------------------- hazard tape: stripes slide as you scroll */
+
+  if (!calm) {
+    const tapes = $$(".tape").map((el, i) => ({ el, dir: i % 2 ? -1 : 1 }));
+    const PERIOD = 33.941; // one stripe period along x at 45 degrees: 24px * sqrt(2); the tile repeats seamlessly
+    let queued = false;
+    const slide = () => {
+      queued = false;
+      tapes.forEach(({ el, dir }) => {
+        // the stripes travel with the scroll position, and neighbouring tapes go opposite ways
+        el.style.setProperty("--tp", ((scrollY * 0.9 * dir) % PERIOD).toFixed(2));
+      });
+    };
+    addEventListener("scroll", () => {
+      if (!queued) {
+        queued = true;
+        requestAnimationFrame(slide);
+      }
+    }, { passive: true });
+    slide();
   }
 
   /* ---------------------------------------------------------------- install box */
@@ -470,10 +493,12 @@
     let dragging = false;
     let reconnect = 0;
 
+    // layout offsets, not bounding boxes: an element that is still sliding in (a CSS translate) would otherwise be
+    // measured in the wrong place and the plug would sit beside its socket
     const rel = (el) => {
-      const a = el.getBoundingClientRect();
-      const b = sec.getBoundingClientRect();
-      return { l: a.left - b.left, t: a.top - b.top, r: a.right - b.left, b: a.bottom - b.top, w: a.width, h: a.height };
+      const l = el.offsetLeft;
+      const t = el.offsetTop;
+      return { l, t, r: l + el.offsetWidth, b: t + el.offsetHeight, w: el.offsetWidth, h: el.offsetHeight };
     };
 
     const measure = () => {

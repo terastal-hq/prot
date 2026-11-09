@@ -105,7 +105,12 @@
 
 <!-- ============================ PORTS -> NAMES ============================ -->
 <section class="soup" id="names">
-  <h2 class="sr">Port numbers become names</h2>
+  <div class="cap cap-names">
+    <h2>Names, not ports</h2>
+    <p>Every dev server gets a stable address like <code>shop.localhost</code>. Ports, PIDs and machines change; the name
+    doesn&rsquo;t. prot forwards it to wherever the server is listening, so bookmarks and config files can point at the name
+    and stay right.</p>
+  </div>
   <div class="soup-field" id="soup-field">
     <div class="tag" data-port="5173"  data-name="shop"   style="--c:0"></div>
     <div class="tag" data-port="8000"  data-name="api"    style="--c:1"></div>
@@ -135,7 +140,12 @@
 
 <!-- ============================ CRASH ============================ -->
 <section class="crash" id="crash">
-  <h2 class="sr">A crashed server restarts by itself</h2>
+  <div class="cap cap-run">
+    <h2>Restarts what crashes</h2>
+    <p>prot starts your servers, watches them, and brings a crashed one back, waiting longer after each failure (1s, 2s,
+    4s, as in the log). Its output is kept, so you can read why it died. Mark a server <code>--auto-start</code> and
+    <code>protd</code> starts it with your session.</p>
+  </div>
   <div class="crash-card" id="crash-card">
     <img class="on" data-s="running"  src="assets/img/card-running.png"  width="956" height="378" alt="Billing API, running">
     <img data-s="crashed"  src="assets/img/card-crashed.png"  width="956" height="376" alt="" aria-hidden="true">
@@ -158,7 +168,12 @@
 
 <!-- ============================ DESKTOP OF TERMINALS ============================ -->
 <section class="desk" id="desk">
-  <h2 class="sr">The command line</h2>
+  <div class="cap cap-cli">
+    <h2>CLI and app</h2>
+    <p><code>prot</code> does everything from the terminal: add, start, stop, logs, tunnels, and <code>--json</code> for
+    scripts. The desktop app is a client of the same daemon, so the two always agree, and closing the app never stops a
+    server.</p>
+  </div>
   <div class="win w-add" data-win>
     <div class="win-bar"><span>~/shop</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
     <pre class="win-body" data-type="add"></pre>
@@ -177,7 +192,12 @@
 
 <!-- ============================ TUNNEL ============================ -->
 <section class="tunnel" id="tunnel">
-  <h2 class="sr">An SSH tunnel you can unplug</h2>
+  <div class="cap cap-tun">
+    <h2>Tunnels over SSH</h2>
+    <p>Reach a port on another machine at <code>proxmox.localhost</code>. prot runs your system&rsquo;s OpenSSH, reconnects
+    when the link drops, and takes machines from your <code>~/.ssh/config</code>. A password or passphrase goes in the OS
+    keyring, never on disk or in a command line.</p>
+  </div>
   <div class="tun-card" id="tun-card">
     <img class="on" data-s="connected"    src="assets/img/tunnel-connected.png"    width="956" height="424" alt="The proxmox tunnel, connected">
     <img data-s="reconnecting" src="assets/img/tunnel-reconnecting.png" width="956" height="424" alt="" aria-hidden="true">
@@ -241,7 +261,12 @@
 
 <!-- ============================ AGENTS ============================ -->
 <section class="agents" id="agents">
-  <h2 class="sr">What an AI agent can do through MCP</h2>
+  <div class="agents-top">
+  <div class="cap cap-ai">
+    <h2>For AI agents</h2>
+    <p><code>prot mcp</code> speaks the Model Context Protocol, so an agent can list your services, read their logs and
+    start what it needs. Tunnels it can list, start and stop, but never create or edit, and it never sees a password.</p>
+  </div>
 
   <div class="win notepad">
     <div class="win-bar"><span>mcp.json</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
@@ -253,6 +278,7 @@
     }
   }
 }</pre>
+  </div>
   </div>
 
   <div class="hud" id="hud">
