@@ -830,9 +830,37 @@ code {
   cursor: pointer;
 }
 .check input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--hazard);
+  appearance: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  display: grid;
+  place-content: center;
+  background: var(--sunken);
+  border: 3px solid;
+  border-color: var(--inset);
+  cursor: pointer;
+}
+.check input::before {
+  content: "";
+  width: 10px;
+  height: 6px;
+  margin-top: -2px;
+  border-left: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+  transform: rotate(-45deg) scale(0);
+}
+.check input:checked {
+  background: var(--gloss-orange);
+  border-color: #ffd89a #8a4400 #8a4400 #ffd89a;
+}
+.check input:checked::before {
+  transform: rotate(-45deg) scale(1);
+}
+.check input:focus-visible {
+  outline: 2px solid var(--daemon);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1107,11 +1135,13 @@ code {
   }
 }
 
-/* select + textarea inside an input well */
-.input-well select,
+/* textarea inside an input well */
 .input-well textarea {
   flex: 1;
   min-width: 0;
+  padding: 8px 0;
+  resize: vertical;
+  line-height: 1.5;
   background: transparent;
   border: none;
   outline: none;
@@ -1121,27 +1151,75 @@ code {
   text-shadow: 0 0 5px rgba(90, 244, 81, 0.4);
   user-select: text;
 }
-.input-well select {
-  min-height: 32px;
-  cursor: pointer;
-  appearance: none;
-  padding-right: 22px;
-  background: transparent
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23fb8808' stroke-width='2.5'/></svg>")
-    no-repeat right 2px center;
-}
-.input-well select option {
-  background: #000;
-  color: var(--daemon);
-}
-.input-well textarea {
-  padding: 8px 0;
-  resize: vertical;
-  line-height: 1.5;
-}
 .input-well textarea::placeholder {
   color: #4a5249;
   text-shadow: none;
+}
+
+/* themed dropdown */
+.field.select {
+  position: relative;
+}
+.select-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: var(--daemon);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-shadow: 0 0 5px rgba(90, 244, 81, 0.4);
+  background: var(--sunken);
+  border: 3px solid;
+  border-color: var(--inset);
+  cursor: pointer;
+}
+.select-btn svg {
+  color: var(--hazard);
+  flex-shrink: 0;
+}
+.select-btn:focus-visible,
+.select-btn[aria-expanded="true"] {
+  outline: 2px solid var(--daemon);
+  outline-offset: 1px;
+}
+.select-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--sunken);
+  border: 3px solid;
+  border-color: var(--raised);
+  outline: 2px solid var(--metal-lo);
+  box-shadow: -4px 4px 0 rgba(0, 0, 0, 0.6);
+}
+.select-list li {
+  padding: 8px 10px;
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+.select-list li:hover {
+  color: var(--ink);
+  background: var(--gloss-orange);
+}
+.select-list li.on {
+  color: var(--daemon);
+}
+.select-list li.on::before {
+  content: "> ";
+  color: var(--hazard);
+}
+.select-list li.on:hover {
+  color: var(--ink);
 }
 
 /* shown on a card after a restart-only setting was changed on a live server */

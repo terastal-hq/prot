@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, Plus, Copy, Check, X } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Plus, Copy, Check, X } from "lucide-react";
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
@@ -50,6 +50,7 @@ function urlSuffix(s: ServiceView) {
 type EditForm = {
   id: string;
   name: string;
+  alias: string;
   command: string;
   cwd: string;
   port: string;
@@ -89,6 +90,7 @@ function toEditForm(s: ServiceView): EditForm {
   return {
     id: s.id,
     name: s.name,
+    alias: s.alias,
     command: s.command ?? "",
     cwd: s.cwd ?? "",
     port: s.port > 0 ? String(s.port) : "",
@@ -149,6 +151,83 @@ function Field(props: {
           spellCheck={false}
         />
       </div>
+    </div>
+  );
+}
+
+/** Themed dropdown; the native <select> popup can't be styled in the webview. */
+function Select(props: {
+  id: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const current = props.options.find((o) => o.value === props.value);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const step = (dir: number) => {
+    const i = props.options.findIndex((o) => o.value === props.value);
+    const next = props.options[Math.min(Math.max(i + dir, 0), props.options.length - 1)];
+    props.onChange(next.value);
+  };
+
+  return (
+    <div className="field select" ref={root}>
+      <label id={`${props.id}-label`}>{props.label}</label>
+      <button
+        type="button"
+        id={props.id}
+        className="select-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-labelledby={`${props.id}-label ${props.id}`}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && open) {
+            e.stopPropagation();
+            setOpen(false);
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            step(1);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            step(-1);
+          }
+        }}
+      >
+        <span>{current?.label ?? props.value}</span>
+        <ChevronDown size={14} strokeWidth={3} />
+      </button>
+      {open && (
+        <ul className="select-list" role="listbox" aria-labelledby={`${props.id}-label`}>
+          {props.options.map((o) => (
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === props.value}
+              className={o.value === props.value ? "on" : ""}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                props.onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              {o.label}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -301,6 +380,7 @@ export function App() {
       const portChanged = f.port !== toEditForm(orig).port;
       await client.updateService(f.id, {
         name: f.name,
+        alias: f.alias,
         command: f.command,
         cwd: f.cwd,
         env,
@@ -821,6 +901,13 @@ export function App() {
               onChange={(v) => setEditForm({ ...editForm, name: v })}
             />
             <Field
+              label="Alias (.localhost)"
+              required
+              prompt="@"
+              value={editForm.alias}
+              onChange={(v) => setEditForm({ ...editForm, alias: v })}
+            />
+            <Field
               label="Command"
               required
               placeholder="pnpm dev"
@@ -843,22 +930,13 @@ export function App() {
                 value={editForm.port}
                 onChange={(v) => setEditForm({ ...editForm, port: v })}
               />
-              <div className="field">
-                <label htmlFor="restart-policy">Restart</label>
-                <div className="input-well">
-                  <select
-                    id="restart-policy"
-                    value={editForm.restartPolicy}
-                    onChange={(e) => setEditForm({ ...editForm, restartPolicy: e.target.value })}
-                  >
-                    {RESTART_POLICIES.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <Select
+                id="restart-policy"
+                label="Restart"
+                value={editForm.restartPolicy}
+                options={RESTART_POLICIES}
+                onChange={(v) => setEditForm({ ...editForm, restartPolicy: v })}
+              />
             </div>
             <div className="field">
               <label htmlFor="env-text">Environment</label>
