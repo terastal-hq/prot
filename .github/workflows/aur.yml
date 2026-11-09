@@ -1,0 +1,58 @@
+name: Publish to AUR
+
+# Publishes protd, prot and prot-desktop (one split PKGBUILD) to the AUR.
+# Called by the Release workflow for every v* tag; also runnable by hand to retry or to re-publish.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version without the leading v (defaults to the tag that triggered the run)"
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v, e.g. 0.1.0 (the v<version> tag must already exist)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish AUR packages
+    runs-on: ubuntu-latest
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set package version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          sed -i "s/^pkgver=.*/pkgver=${version}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
+          grep -n '^pkgver=\|^pkgrel=' packaging/aur/PKGBUILD
+
+      - name: Publish prot, protd and prot-desktop to the AUR
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: prot
+          pkgbuild: ./packaging/aur/PKGBUILD
+          assets: |
+            ./packaging/aur/protd.service
+            ./packaging/aur/protd.install
+          updpkgsums: true
+          commit_username: Aditya Gupta
+          commit_email: mail@adityagupta.dev
+          ssh_private_key: ${{ env.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ inputs.version || github.ref_name }}"
+
+      - name: Skipped (no AUR key)
+        if: env.AUR_SSH_PRIVATE_KEY == ''
+        run: echo "::warning::AUR_SSH_PRIVATE_KEY is not set; skipping AUR publish."

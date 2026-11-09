@@ -109,34 +109,5 @@ jobs:
     name: Publish AUR packages
     needs: [test, release-go]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    env:
-      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set package version from the tag
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          sed -i "s/^pkgver=.*/pkgver=${version}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
-          grep -n '^pkgver=\|^pkgrel=' packaging/aur/PKGBUILD
-
-      - name: Publish prot, protd and prot-desktop to the AUR
-        if: env.AUR_SSH_PRIVATE_KEY != ''
-        uses: KSXGitHub/github-actions-deploy-aur@v4
-        with:
-          pkgname: prot
-          pkgbuild: ./packaging/aur/PKGBUILD
-          assets: |
-            ./packaging/aur/protd.service
-            ./packaging/aur/protd.install
-          updpkgsums: true
-          commit_username: Aditya Gupta
-          commit_email: mail@adityagupta.dev
-          ssh_private_key: ${{ env.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ github.ref_name }}"
-
-      - name: Skipped (no AUR key)
-        if: env.AUR_SSH_PRIVATE_KEY == ''
-        run: echo "::warning::AUR_SSH_PRIVATE_KEY is not set; skipping AUR publish."
+    uses: ./.github/workflows/aur.yml
+    secrets: inherit
