@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prot: stable .localhost URLs for your dev servers</title>
+<meta name="description" content="prot gives every development server a stable name like shop.localhost, keeps it running, and reaches remote ports over SSH. A daemon, a CLI, a desktop app and an MCP server for Linux.">
+<meta name="theme-color" content="#0b0807">
+<meta property="og:title" content="prot: stable .localhost URLs for your dev servers">
+<meta property="og:description" content="Every dev server gets a name like shop.localhost, a supervisor that restarts it, and SSH tunnels you can unplug.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="assets/img/favicon.png">
+<link rel="preload" href="assets/fonts/anton.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<noscript><style>
+  /* without script the ports are shown already named, in a plain list */
+  .tag { position: static; display: inline-block; margin: 6px 8px; transform: none; }
+  .tag:empty::after { content: attr(data-name) ".localhost"; padding: 6px 12px; font: 600 20px var(--font-mono); color: var(--daemon); background: #000; }
+  .tag.decoy, .stamp, .big { display: none; }
+  .soup-field { height: auto; }
+  .cmd-well pre::after { content: "curl -fsSL https://raw.githubusercontent.com/terastal-hq/prot/main/scripts/install.sh | bash"; }
+  .plane { --e: 1; }
+</style></noscript>
+</head>
+<body>
+
+<!-- shared SVG filters: worn ink for the stamp, a hand-drawn wobble for the arrows -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="worn" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 1.55" result="holes"/>
+    <feComposite in="SourceGraphic" in2="holes" operator="in" result="eaten"/>
+    <feTurbulence type="turbulence" baseFrequency=".04" numOctaves="2" seed="9" result="w"/>
+    <feDisplacementMap in="eaten" in2="w" scale="2.5"/>
+  </filter>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="turbulence" baseFrequency=".03" numOctaves="2" seed="2" result="w"/>
+    <feDisplacementMap in="SourceGraphic" in2="w" scale="4"/>
+  </filter>
+</svg>
+
+<!-- ============================ HERO ============================ -->
+<header class="hero" id="top">
+  <nav class="top" aria-label="Links">
+    <a class="btn" href="https://github.com/terastal-hq/prot/tree/main/docs">Docs</a>
+    <a class="btn" href="https://github.com/terastal-hq/prot">GitHub</a>
+  </nav>
+
+  <div class="hero-left">
+    <h1 class="logo-wrap"><img class="logo" src="assets/img/logo.png" width="570" height="368" alt="prot"></h1>
+
+    <div class="install" id="install">
+      <img class="garg" src="assets/img/gargoyle.png" width="235" height="243" alt="The prot gargoyle with sunglasses, holding a cable and a joystick">
+      <div class="tabs" role="tablist" aria-label="Install method">
+        <button class="tab" role="tab" id="tab-curl" aria-selected="true" aria-controls="cmd" data-cmd="curl">curl</button>
+        <button class="tab" role="tab" id="tab-aur" aria-selected="false" aria-controls="cmd" data-cmd="aur" tabindex="-1">aur</button>
+      </div>
+      <div class="cmd-well">
+        <pre id="cmd" tabindex="0" aria-live="polite"></pre>
+        <button class="btn btn-primary" id="copy" type="button">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-stage" id="stage-col">
+    <div class="stage-box" id="stage-box">
+      <div class="stage" id="stage" role="img" aria-label="The prot desktop app, pulled apart into its parts: a crashed server card, its status badge, a service URL, the daemon light and the navigation bar">
+        <div class="plane" id="plane">
+          <img class="base" src="assets/img/app.png" width="520" height="900" alt="">
+          <!-- home rectangles of the parts, in the app's own pixels (see scripts/gen_site_assets.py) -->
+          <i class="ghost" style="--l:22px;--t:624px;--w:476px;--h:186px"></i>
+          <i class="ghost" style="--l:30px;--t:308px;--w:243px;--h:35px"></i>
+          <i class="ghost" style="--l:405px;--t:218px;--w:88px;--h:28px"></i>
+          <i class="ghost" style="--l:260px;--t:15px;--w:146px;--h:34px"></i>
+          <i class="ghost" style="--l:16px;--t:151px;--w:488px;--h:47px"></i>
+          <i class="ghost" style="--l:2px;--t:826px;--w:516px;--h:70px"></i>
+          <i class="ghost" style="--l:31px;--t:348px;--w:155px;--h:40px"></i>
+
+          <i class="lead" style="--l:22px;--t:624px;--w:476px;--h:186px;--z:70"></i>
+          <i class="lead" style="--l:406px;--t:629px;--w:88px;--h:26px;--z:150"></i>
+          <i class="lead" style="--l:30px;--t:308px;--w:243px;--h:35px;--z:110"></i>
+          <i class="lead" style="--l:405px;--t:218px;--w:88px;--h:28px;--z:190"></i>
+          <i class="lead" style="--l:260px;--t:15px;--w:146px;--h:34px;--z:130"></i>
+          <i class="lead" style="--l:16px;--t:151px;--w:488px;--h:47px;--z:90"></i>
+          <i class="lead" style="--l:2px;--t:826px;--w:516px;--h:70px;--z:60"></i>
+          <i class="lead" style="--l:31px;--t:348px;--w:155px;--h:40px;--z:170"></i>
+
+          <img class="piece" src="assets/img/p-card.png"   alt="" style="--l:22px;--t:624px;--w:476px;--h:186px;--z:70;--r:-2.5">
+          <img class="piece" src="assets/img/p-badge.png"  alt="" style="--l:406px;--t:629px;--w:88px;--h:26px;--z:150;--r:5">
+          <img class="piece" src="assets/img/p-url.png"    alt="" style="--l:30px;--t:308px;--w:243px;--h:35px;--z:110;--r:-3">
+          <img class="piece" src="assets/img/p-run.png"    alt="" style="--l:405px;--t:218px;--w:88px;--h:28px;--z:190;--r:4">
+          <img class="piece" src="assets/img/p-daemon.png" alt="" style="--l:260px;--t:15px;--w:146px;--h:34px;--z:130;--r:2">
+          <img class="piece" src="assets/img/p-count.png"  alt="" style="--l:16px;--t:151px;--w:488px;--h:47px;--z:90;--r:-1.5">
+          <img class="piece" src="assets/img/p-nav.png"    alt="" style="--l:2px;--t:826px;--w:516px;--h:70px;--z:60;--r:1.2">
+          <img class="piece" src="assets/img/p-btns.png"   alt="" style="--l:31px;--t:348px;--w:155px;--h:40px;--z:170;--r:-4">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <svg class="burst" viewBox="0 0 120 120" aria-hidden="true">
+    <polygon points="60,2 71,22 92,10 93,34 116,34 105,55 124,70 102,80 111,102 88,100 82,122 62,108 44,124 38,100 14,106 20,82 -2,70 16,54 4,34 28,32 30,8 50,20"
+             fill="#ffd21a" stroke="#c4181b" stroke-width="4" stroke-linejoin="round"/>
+    <text x="60" y="67" text-anchor="middle" font-family="Anton, Impact, sans-serif" font-size="25" fill="#1a0a00">LINUX</text>
+  </svg>
+</header>
+
+<div class="tape tape-a" aria-hidden="true"></div>
+
+<!-- ============================ PORTS -> NAMES ============================ -->
+<section class="soup" id="names">
+  <h2 class="sr">Port numbers become names</h2>
+  <div class="soup-field" id="soup-field">
+    <div class="tag" data-port="5173"  data-name="shop"   style="--c:0"></div>
+    <div class="tag" data-port="8000"  data-name="api"    style="--c:1"></div>
+    <div class="tag hot" data-port="3000"  data-name="web"    style="--c:2"></div>
+    <div class="tag" data-port="3001"  data-name="admin"  style="--c:3"></div>
+    <div class="tag" data-port="4321"  data-name="blog"   style="--c:4"></div>
+    <div class="tag" data-port="8001"  data-name="docs"   style="--c:5"></div>
+    <div class="tag" data-port="8787"  data-name="edge"   style="--c:6"></div>
+    <div class="tag" data-port="5432"  data-name="db"     style="--c:7"></div>
+    <div class="tag" data-port="6379"  data-name="cache"  style="--c:8"></div>
+    <div class="tag" data-port="9000"  data-name="worker" style="--c:9"></div>
+    <!-- ports that are not services: they are in the way until the real ones have names -->
+    <div class="tag decoy" data-port="9229"  style="--c:1"></div>
+    <div class="tag decoy" data-port="35729" style="--c:3"></div>
+    <div class="tag decoy" data-port="24678" style="--c:5"></div>
+    <div class="tag decoy" data-port="3306"  style="--c:7"></div>
+    <div class="tag decoy" data-port="27017" style="--c:2"></div>
+    <div class="tag decoy" data-port="1313"  style="--c:6"></div>
+    <div class="stamp" aria-hidden="true">EADDRINUSE</div>
+  </div>
+  <button class="big" id="soup-btn" type="button" aria-pressed="false">
+    <span class="big-face" data-a="PROT" data-b="UNDO">PROT</span>
+  </button>
+</section>
+
+<div class="tape tape-b" aria-hidden="true"></div>
+
+<!-- ============================ CRASH ============================ -->
+<section class="crash" id="crash">
+  <h2 class="sr">A crashed server restarts by itself</h2>
+  <div class="crash-card" id="crash-card">
+    <img class="on" data-s="running"  src="assets/img/card-running.png"  width="956" height="378" alt="Billing API, running">
+    <img data-s="crashed"  src="assets/img/card-crashed.png"  width="956" height="376" alt="" aria-hidden="true">
+    <img data-s="starting" src="assets/img/card-starting.png" width="956" height="378" alt="" aria-hidden="true">
+  </div>
+  <div class="kill-wrap">
+    <svg class="arrow arrow-kill" viewBox="0 0 150 110" aria-hidden="true">
+      <path d="M6 94 C 30 22, 80 14, 116 48" fill="none" stroke="#ffd21a" stroke-width="5" stroke-linecap="round"/>
+      <path d="M94 45 L 116 48 L 112 27" fill="none" stroke="#ffd21a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <button class="kill" id="kill" type="button"><span>kill -9</span></button>
+  </div>
+  <div class="win crash-log" id="crash-log">
+    <div class="win-bar"><span>prot logs api</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
+    <pre class="win-body" id="crash-out" aria-live="polite"></pre>
+  </div>
+</section>
+
+<div class="tape tape-c" aria-hidden="true"></div>
+
+<!-- ============================ DESKTOP OF TERMINALS ============================ -->
+<section class="desk" id="desk">
+  <h2 class="sr">The command line</h2>
+  <div class="win w-add" data-win>
+    <div class="win-bar"><span>~/shop</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
+    <pre class="win-body" data-type="add"></pre>
+  </div>
+  <div class="win w-ls" data-win>
+    <div class="win-bar"><span>bash</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
+    <pre class="win-body" data-type="ls"></pre>
+  </div>
+  <div class="win w-status" data-win>
+    <div class="win-bar"><span>prot status</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
+    <pre class="win-body" data-type="status"></pre>
+  </div>
+</section>
+
+<div class="tape tape-d" aria-hidden="true"></div>
+
+<!-- ============================ TUNNEL ============================ -->
+<section class="tunnel" id="tunnel">
+  <h2 class="sr">An SSH tunnel you can unplug</h2>
+  <div class="tun-card" id="tun-card">
+    <img class="on" data-s="connected"    src="assets/img/tunnel-connected.png"    width="956" height="424" alt="The proxmox tunnel, connected">
+    <img data-s="reconnecting" src="assets/img/tunnel-reconnecting.png" width="956" height="424" alt="" aria-hidden="true">
+  </div>
+
+  <svg class="cable-svg" id="cable-svg" viewBox="0 0 1000 420" preserveAspectRatio="none" aria-hidden="true">
+    <path id="cable-shadow" d="" fill="none" stroke="#000" stroke-opacity=".45" stroke-width="16" stroke-linecap="round"/>
+    <path id="cable-edge" d="" fill="none" stroke="#1a0a00" stroke-width="14" stroke-linecap="round"/>
+    <path id="cable-body" d="" fill="none" stroke="#fb8808" stroke-width="10" stroke-linecap="round"/>
+    <path id="cable-shine" d="" fill="none" stroke="#ffd9a0" stroke-opacity=".7" stroke-width="2.5" stroke-linecap="round"/>
+    <path id="cable-pulse" d="" fill="none" stroke="#5af451" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 46"/>
+  </svg>
+
+  <div class="rack" id="rack">
+    <svg viewBox="0 0 220 250" role="img" aria-label="A server" class="rack-svg">
+      <defs>
+        <linearGradient id="g-metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8d9496"/><stop offset=".08" stop-color="#6c7375"/><stop offset=".5" stop-color="#454b4d"/><stop offset="1" stop-color="#2b2f31"/></linearGradient>
+        <linearGradient id="g-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5c6365"/><stop offset=".5" stop-color="#3d4345"/><stop offset="1" stop-color="#2a2e30"/></linearGradient>
+        <pattern id="vent" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#16191a"/><rect x="0" y="0" width="6" height="2" fill="#050606"/><rect x="0" y="2" width="6" height="1" fill="#5d6466" opacity=".5"/></pattern>
+      </defs>
+      <ellipse cx="112" cy="238" rx="96" ry="9" fill="#000" opacity=".5"/>
+      <g transform="rotate(-1.2 110 120)">
+        <rect x="14" y="10" width="190" height="212" fill="url(#g-metal)" stroke="#050606" stroke-width="3"/>
+        <path d="M14 10 H204 M14 10 V222" stroke="#b0b7ae" stroke-width="3" fill="none"/>
+        <g id="rack-units">
+          <rect x="26" y="22" width="166" height="44" fill="url(#g-face)" stroke="#050606" stroke-width="2"/>
+          <rect x="34" y="30" width="86" height="28" fill="url(#vent)" stroke="#050606"/>
+          <rect x="26" y="74" width="166" height="44" fill="url(#g-face)" stroke="#050606" stroke-width="2"/>
+          <rect x="34" y="82" width="86" height="28" fill="url(#vent)" stroke="#050606"/>
+          <rect x="26" y="126" width="166" height="44" fill="url(#g-face)" stroke="#050606" stroke-width="2"/>
+          <rect x="34" y="134" width="86" height="28" fill="url(#vent)" stroke="#050606"/>
+        </g>
+        <circle class="rack-led" cx="156" cy="40" r="5" fill="#5af451" stroke="#050606" stroke-width="1.5"/>
+        <circle class="rack-led" cx="156" cy="92" r="5" fill="#5af451" stroke="#050606" stroke-width="1.5"/>
+        <circle cx="174" cy="40" r="5" fill="#ffd21a" stroke="#050606" stroke-width="1.5"/>
+        <circle cx="174" cy="92" r="5" fill="#2a2e30" stroke="#050606" stroke-width="1.5"/>
+        <circle cx="156" cy="144" r="5" fill="#2a2e30" stroke="#050606" stroke-width="1.5"/>
+        <rect x="136" y="150" width="46" height="10" fill="#050606"/>
+        <rect x="26" y="180" width="166" height="32" fill="url(#vent)" stroke="#050606" stroke-width="2"/>
+        <path d="M30 188 H88 M30 196 H88 M30 204 H88" stroke="#050606" stroke-width="2" opacity=".6"/>
+      </g>
+    </svg>
+    <div class="rack-tag">192.168.0.109</div>
+  </div>
+
+  <button class="plug" id="plug" type="button" aria-pressed="true" aria-label="Unplug the cable">
+    <svg viewBox="0 0 70 46" aria-hidden="true">
+      <rect x="2" y="9" width="40" height="28" rx="3" fill="#2a2e30" stroke="#000" stroke-width="3"/>
+      <rect x="2" y="9" width="40" height="8" fill="#6f7678"/>
+      <rect x="42" y="14" width="24" height="18" fill="#c8c2b6" stroke="#000" stroke-width="3"/>
+      <rect x="48" y="19" width="5" height="8" fill="#000"/><rect x="57" y="19" width="5" height="8" fill="#000"/>
+    </svg>
+  </button>
+  <svg class="arrow arrow-plug" viewBox="0 0 150 110" aria-hidden="true">
+    <path d="M118 102 C 112 56, 76 32, 36 24" fill="none" stroke="#ffd21a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M48 42 L 32 24 L 54 14" fill="none" stroke="#ffd21a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</section>
+
+<div class="tape tape-e" aria-hidden="true"></div>
+
+<!-- ============================ AGENTS ============================ -->
+<section class="agents" id="agents">
+  <h2 class="sr">What an AI agent can do through MCP</h2>
+
+  <div class="win notepad">
+    <div class="win-bar"><span>mcp.json</span><i class="win-x" aria-hidden="true">_</i><i class="win-x" aria-hidden="true">x</i></div>
+<pre class="win-body">{
+  "mcpServers": {
+    "prot": {
+      "command": "prot",
+      "args": ["mcp"]
+    }
+  }
+}</pre>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="hud-read" id="hud-read" aria-live="polite">prot mcp</div>
+
+    <div class="hud-cell hud-count">
+      <b>12</b><span>tools</span>
+    </div>
+
+    <div class="hud-cell hud-arms">
+      <ol class="arms" id="arms">
+        <li><button type="button" data-t="list_services">1</button></li>
+        <li><button type="button" data-t="get_service">2</button></li>
+        <li><button type="button" data-t="get_service_url">3</button></li>
+        <li><button type="button" data-t="get_service_logs">4</button></li>
+        <li><button type="button" data-t="ensure_running">5</button></li>
+        <li><button type="button" data-t="start_service">6</button></li>
+        <li><button type="button" data-t="stop_service">7</button></li>
+        <li><button type="button" data-t="restart_service">8</button></li>
+        <li><button type="button" data-t="set_alias">9</button></li>
+        <li><button type="button" data-t="list_tunnels">10</button></li>
+        <li><button type="button" data-t="start_tunnel">11</button></li>
+        <li><button type="button" data-t="stop_tunnel">12</button></li>
+      </ol>
+    </div>
+
+    <div class="hud-face" id="hud-face">
+      <img src="assets/img/gargoyle.png" width="250" height="276" alt="">
+    </div>
+
+    <div class="hud-cell hud-locked">
+      <ul class="locks" id="locks">
+        <li><button type="button" data-t="create a tunnel: not available to agents" aria-label="Create a tunnel: not available to agents"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3" fill="none"/><rect x="4" y="11" width="16" height="11"/></svg></button></li>
+        <li><button type="button" data-t="edit a tunnel: not available to agents" aria-label="Edit a tunnel: not available to agents"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3" fill="none"/><rect x="4" y="11" width="16" height="11"/></svg></button></li>
+        <li><button type="button" data-t="read a password: not available to agents" aria-label="Read a password: not available to agents"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3" fill="none"/><rect x="4" y="11" width="16" height="11"/></svg></button></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <a class="btn" href="https://github.com/terastal-hq/prot">GitHub</a>
+  <a class="btn" href="https://github.com/terastal-hq/prot/tree/main/docs">Docs</a>
+  <a class="btn" href="https://github.com/terastal-hq/prot/releases">Releases</a>
+  <a class="btn" href="https://aur.archlinux.org/packages/prot-desktop">AUR</a>
+  <span class="mit">MIT</span>
+</footer>
+
+<script src="data.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
