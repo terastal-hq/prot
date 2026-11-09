@@ -103,6 +103,13 @@ export class ProtClient {
     return this.request<ServiceView>(`/v1/services/${id}/restart`, { method: "POST" });
   }
 
+  async renameAlias(id: string, alias: string): Promise<ServiceView> {
+    return this.request<ServiceView>(`/v1/services/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ alias }),
+    });
+  }
+
   async deleteService(id: string): Promise<void> {
     return this.request<void>(`/v1/services/${id}`, { method: "DELETE" });
   }

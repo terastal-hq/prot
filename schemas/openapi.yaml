@@ -62,6 +62,27 @@ paths:
       responses:
         "200": { description: Service details }
         "404": { description: Not found }
+    patch:
+      summary: Change a service alias (moves its .localhost route)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias]
+              properties:
+                alias: { type: string, description: DNS label, lowercase letters/digits/hyphens }
+      responses:
+        "200": { description: Updated service }
+        "400": { description: Invalid alias }
+        "404": { description: Not found }
+        "409": { description: Alias already used }
     delete:
       summary: Remove service registration
       parameters:

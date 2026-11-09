@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -279,6 +281,64 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 		Data:      view,
 	})
 
+	return &view, nil
+}
+
+// ErrInvalidAlias is returned when an alias is not a valid DNS label.
+var ErrInvalidAlias = errors.New("alias must be 1-63 characters: lowercase letters, digits and hyphens, " +
+	"not starting or ending with a hyphen")
+
+// ErrAliasTaken is returned when another service already uses the alias.
+var ErrAliasTaken = errors.New("alias is already used by another service")
+
+var aliasPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// RenameAlias changes the .localhost alias of a service and moves its live route.
+func (r *Registry) RenameAlias(ctx context.Context, idOrAlias, newAlias string) (*ServiceView, error) {
+	newAlias = strings.ToLower(strings.TrimSpace(newAlias))
+	if !aliasPattern.MatchString(newAlias) {
+		return nil, ErrInvalidAlias
+	}
+
+	id, err := r.resolveServiceID(ctx, idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+	svc, err := r.db.GetService(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	all, err := r.db.ListServices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, other := range all {
+		if other.ID != id && other.Alias == newAlias {
+			return nil, ErrAliasTaken
+		}
+	}
+
+	oldAlias := svc.Alias
+	if oldAlias != newAlias {
+		svc.Alias = newAlias
+		if err := r.db.SaveService(ctx, *svc); err != nil {
+			return nil, fmt.Errorf("saving service: %w", err)
+		}
+		if rt, ok := r.router.GetRoute(oldAlias); ok {
+			r.router.RemoveRoute(oldAlias)
+			_ = r.router.SetRoute(newAlias, rt.TargetURL, rt.LANExposed)
+		}
+		_ = r.db.LogEvent(ctx, "service.renamed", id, fmt.Sprintf(`{"from": %q, "to": %q}`, oldAlias, newAlias))
+	}
+
+	view := r.toServiceView(*svc)
+	r.Broadcast(Event{
+		Type:      "service.updated",
+		ServiceID: id,
+		Timestamp: time.Now().UTC(),
+		Data:      view,
+	})
 	return &view, nil
 }
 

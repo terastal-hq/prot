@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Square, RotateCw, Trash2, Terminal, ExternalLink, Plus, Copy, Check, X } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Plus, Copy, Check, X } from "lucide-react";
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
@@ -38,6 +38,13 @@ function tunnelKind(state: TunnelStatus["state"]): Kind {
     default:
       return "idle";
   }
+}
+
+/** The part of the canonical URL after the alias, e.g. ".localhost:8080". */
+function urlSuffix(s: ServiceView) {
+  const url = s.canonical_url || `http://${s.alias}.localhost`;
+  const i = url.indexOf(s.alias);
+  return i >= 0 ? url.slice(i + s.alias.length) : ".localhost";
 }
 
 function GearIcon() {
@@ -134,6 +141,7 @@ export function App() {
   // Settings
   const [adminUrl, setAdminUrl] = useState(client.getBaseUrl());
   const [authToken, setAuthToken] = useState(client.getToken());
+  const [editingAlias, setEditingAlias] = useState<{ id: string; value: string } | null>(null);
   const [copiedMCP, setCopiedMCP] = useState(false);
 
   const notify = useCallback((text: string, ok = false) => {
@@ -190,6 +198,23 @@ export function App() {
     try {
       await action();
       await refreshData();
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  const saveAlias = async (s: ServiceView) => {
+    if (!editingAlias) return;
+    const alias = editingAlias.value.trim().toLowerCase();
+    if (alias === s.alias) {
+      setEditingAlias(null);
+      return;
+    }
+    try {
+      await client.renameAlias(s.id, alias);
+      setEditingAlias(null);
+      await refreshData();
+      notify(`Now at ${alias}.localhost`, true);
     } catch (err) {
       fail(err);
     }
@@ -356,12 +381,50 @@ export function App() {
                       {s.port > 0 && <span className="port">:{s.port}</span>}
                       {s.pid ? <span className="dim">pid {s.pid}</span> : null}
                     </div>
-                    {s.canonical_url ? (
-                      <a className="card-url" href={s.canonical_url} target="_blank" rel="noreferrer">
-                        {s.canonical_url} <ExternalLink size={12} strokeWidth={2.5} />
-                      </a>
+                    {editingAlias?.id === s.id ? (
+                      <form
+                        className="url-edit"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          saveAlias(s);
+                        }}
+                      >
+                        <span className="url-affix">http://</span>
+                        <input
+                          className="url-input"
+                          autoFocus
+                          spellCheck={false}
+                          value={editingAlias.value}
+                          size={Math.max(editingAlias.value.length + 1, 4)}
+                          onChange={(e) => setEditingAlias({ id: s.id, value: e.target.value })}
+                          onKeyDown={(e) => e.key === "Escape" && setEditingAlias(null)}
+                        />
+                        <span className="url-affix">{urlSuffix(s)}</span>
+                        <button type="submit" className="icon-btn go" title="Save">
+                          <Check size={14} strokeWidth={3} />
+                        </button>
+                        <button type="button" className="icon-btn" title="Cancel" onClick={() => setEditingAlias(null)}>
+                          <X size={14} strokeWidth={3} />
+                        </button>
+                      </form>
                     ) : (
-                      <span className="dim">http://{s.alias}.localhost</span>
+                      <div className="url-row">
+                        <a
+                          className="card-url"
+                          href={s.canonical_url || `http://${s.alias}.localhost`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {s.canonical_url || `http://${s.alias}.localhost`}
+                        </a>
+                        <button
+                          className="icon-btn"
+                          title="Edit URL"
+                          onClick={() => setEditingAlias({ id: s.id, value: s.alias })}
+                        >
+                          <Pencil size={14} strokeWidth={2.5} />
+                        </button>
+                      </div>
                     )}
                     <div className="card-actions">
                       {s.status === "running" ? (

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -64,6 +65,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/services", s.handleListServices)
 	s.mux.HandleFunc("POST /v1/services", s.handleCreateService)
 	s.mux.HandleFunc("GET /v1/services/{id}", s.handleGetService)
+	s.mux.HandleFunc("PATCH /v1/services/{id}", s.handleUpdateService)
 	s.mux.HandleFunc("DELETE /v1/services/{id}", s.handleDeleteService)
 	s.mux.HandleFunc("POST /v1/services/{id}/start", s.handleStartService)
 	s.mux.HandleFunc("POST /v1/services/{id}/stop", s.handleStopService)
@@ -170,6 +172,30 @@ func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, svc)
+}
+
+func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Alias *string `json:"alias"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Alias == nil {
+		jsonErr(w, http.StatusBadRequest, "request must be json with an alias")
+		return
+	}
+
+	view, err := s.reg.RenameAlias(r.Context(), r.PathValue("id"), *req.Alias)
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		jsonErr(w, http.StatusNotFound, "service not found")
+	case errors.Is(err, registry.ErrInvalidAlias):
+		jsonErr(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, registry.ErrAliasTaken):
+		jsonErr(w, http.StatusConflict, err.Error())
+	case err != nil:
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+	default:
+		jsonOK(w, view)
+	}
 }
 
 func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {

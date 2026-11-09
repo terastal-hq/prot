@@ -661,17 +661,68 @@ code {
   border-color: var(--inset);
 }
 
+.url-row,
+.url-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.url-row .icon-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .card-url {
   color: var(--acid);
-  font-size: 12px;
+  font-size: 16px;
+  font-weight: 700;
   text-decoration: underline;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  text-underline-offset: 3px;
+  text-shadow: 1px 1px 0 #000;
   word-break: break-all;
+  min-width: 0;
 }
 .card-url:hover {
   color: var(--gold);
+}
+
+.url-edit {
+  gap: 0;
+  padding: 2px 6px;
+  background: var(--sunken);
+  border: 2px solid;
+  border-color: var(--inset);
+}
+.url-affix {
+  color: var(--ash);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.url-input {
+  min-width: 3ch;
+  max-width: 100%;
+  flex: 0 1 auto;
+  padding: 2px 4px;
+  font: 700 16px var(--font-ui);
+  color: var(--gold);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--hazard);
+  outline: none;
+}
+.url-edit .icon-btn {
+  flex-shrink: 0;
+}
+.url-edit .icon-btn {
+  margin-left: 6px;
+}
+.url-edit .icon-btn:first-of-type {
+  margin-left: auto;
+}
+.url-input {
+  margin: 0 1px;
 }
 
 .card-actions {
