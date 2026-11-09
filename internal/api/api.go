@@ -208,6 +208,10 @@ func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStartService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	view, err := s.reg.StartService(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "service not found")
+		return
+	}
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -218,6 +222,10 @@ func (s *Server) handleStartService(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStopService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	view, err := s.reg.StopService(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "service not found")
+		return
+	}
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -228,6 +236,10 @@ func (s *Server) handleStopService(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRestartService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	view, err := s.reg.RestartService(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "service not found")
+		return
+	}
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return

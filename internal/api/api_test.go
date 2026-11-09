@@ -150,3 +150,17 @@ func TestAPIRoutes(t *testing.T) {
 		t.Fatalf("expected 204 NoContent, got %d", rec.Code)
 	}
 }
+
+func TestAPIUnknownServiceControlReturns404(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	for _, action := range []string{"start", "stop", "restart"} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/services/ghost/"+action, nil)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s of an unknown service: status %d, want 404 (%s)", action, rec.Code, rec.Body.String())
+		}
+	}
+}
