@@ -301,6 +301,7 @@ func cmdAdd(args []string) {
 	portFlag := fs.Uint("port", 0, "Service port")
 	cwdFlag := fs.String("cwd", "", "Working directory")
 	autoPortFlag := fs.Bool("auto-port", false, "Automatically assign free port")
+	autoStartFlag := fs.Bool("auto-start", false, "Start the service whenever protd starts")
 
 	_ = fs.Parse(args[1:])
 
@@ -326,6 +327,7 @@ func cmdAdd(args []string) {
 		Port:          uint32(*portFlag),
 		Cwd:           *cwdFlag,
 		AutoPort:      *autoPortFlag,
+		AutoStart:     *autoStartFlag,
 		RestartPolicy: "on-failure",
 	}
 
