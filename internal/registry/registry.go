@@ -526,7 +526,9 @@ func (r *Registry) StopService(ctx context.Context, idOrAlias string) (*ServiceV
 		return nil, err
 	}
 
-	if err := r.supervisor.Stop(id, 3*time.Second); err != nil {
+	// Stopping is idempotent: a service the supervisor has no process for (never started since the daemon
+	// booted, or already cleaned up) is simply already stopped.
+	if err := r.supervisor.Stop(id, 3*time.Second); err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return nil, fmt.Errorf("stopping process: %w", err)
 	}
 

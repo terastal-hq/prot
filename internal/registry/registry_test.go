@@ -240,3 +240,32 @@ func TestRegistryUpdateService(t *testing.T) {
 		t.Errorf("rejected patches must not change data: %+v", after)
 	}
 }
+
+func TestStopServiceIsIdempotent(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "prot.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	reg := New(Config{DB: db, Router: proxy.NewRouter(), GatewayHost: "8080"})
+
+	ctx := context.Background()
+	idle := storage.Service{ID: "svc-idle", Name: "Idle", Command: "sleep 60"}
+	if _, err := reg.RegisterService(ctx, idle); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		view, err := reg.StopService(ctx, "svc-idle")
+		if err != nil {
+			t.Fatalf("stop #%d of a never-started service should succeed: %v", i+1, err)
+		}
+		if view.Status != "stopped" {
+			t.Errorf("status = %q, want stopped", view.Status)
+		}
+	}
+
+	if _, err := reg.StopService(ctx, "does-not-exist"); err == nil {
+		t.Error("stopping an unknown service must still fail")
+	}
+}
