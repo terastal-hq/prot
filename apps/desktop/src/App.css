@@ -137,6 +137,64 @@ svg {
   overflow: hidden;
 }
 
+.app.framed {
+  border: 2px solid;
+  border-color: var(--raised);
+  outline: 1px solid var(--ink);
+  outline-offset: -1px;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #4a4f51, #2b2f31);
+  border-bottom: 2px solid var(--metal-lo);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.titlebar-text {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-wordart);
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper);
+  text-shadow: 1px 1px 0 #000;
+}
+.titlebar-btns {
+  display: flex;
+  gap: 3px;
+}
+.titlebar-btns button {
+  width: 26px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--paper);
+  background: var(--gloss-metal);
+  border: 2px solid;
+  border-color: var(--raised);
+  cursor: pointer;
+}
+.titlebar-btns button:hover {
+  filter: brightness(1.2);
+}
+.titlebar-btns button:active {
+  border-color: var(--inset);
+  filter: none;
+}
+.titlebar-btns .close:hover {
+  background: var(--gloss-red);
+  filter: none;
+}
+
 .app-header {
   position: relative;
   display: flex;

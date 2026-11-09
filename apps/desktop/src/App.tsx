@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Plus, Copy, Check, X } from "lucide-react";
+import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Minus, Plus, Copy, Check, X } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { client } from "./api";
 import { DaemonHealth, DiscoveredProcess, LogEntry, ServiceView, TunnelStatus } from "./types";
 import wordmark from "./assets/wordmark.png";
@@ -156,6 +157,28 @@ function Field(props: {
           onChange={(e) => props.onChange(e.target.value)}
           spellCheck={false}
         />
+      </div>
+    </div>
+  );
+}
+
+const inTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI__);
+
+/** Custom window frame: the OS title bar is disabled in tauri.conf.json. */
+function TitleBar() {
+  const win = getCurrentWindow();
+  return (
+    <div className="titlebar" data-tauri-drag-region>
+      <span className="titlebar-text" data-tauri-drag-region>
+        prot
+      </span>
+      <div className="titlebar-btns">
+        <button type="button" title="Minimize" aria-label="Minimize" onClick={() => win.minimize()}>
+          <Minus size={12} strokeWidth={3} />
+        </button>
+        <button type="button" className="close" title="Close" aria-label="Close" onClick={() => win.close()}>
+          <X size={12} strokeWidth={3} />
+        </button>
       </div>
     </div>
   );
@@ -508,7 +531,8 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className={`app ${inTauri ? "framed" : ""}`}>
+      {inTauri && <TitleBar />}
       <header className="app-header">
         <img src={wordmark} alt="prot" />
         <div className="header-right">

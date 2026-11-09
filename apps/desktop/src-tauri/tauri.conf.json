@@ -19,7 +19,9 @@
         "minWidth": 380,
         "minHeight": 560,
         "maxWidth": 520,
-        "maxHeight": 900
+        "maxHeight": 900,
+        "decorations": false,
+        "label": "main"
       }
     ],
     "security": {
