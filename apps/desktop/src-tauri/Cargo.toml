@@ -1,6 +1,6 @@
 [package]
 name = "prot-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "prot developer service control plane"
 edition = "2021"
 

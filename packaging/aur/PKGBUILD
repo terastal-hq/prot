@@ -7,7 +7,7 @@
 
 pkgbase=prot
 pkgname=(protd prot prot-desktop)
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Your development servers, under control"
 arch=(x86_64 aarch64)

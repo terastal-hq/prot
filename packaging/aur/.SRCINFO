@@ -1,6 +1,6 @@
 pkgbase = prot
 	pkgdesc = Your development servers, under control
-	pkgver = 0.1.0
+	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/terastal-hq/prot
 	arch = x86_64
