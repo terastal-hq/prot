@@ -280,6 +280,47 @@ paths:
       responses:
         "200": { description: Tunnel status (has_password is false) }
         "404": { description: Unknown tunnel }
+  /v1/ssh/hosts:
+    get:
+      summary: List the machines defined in the user's ssh configuration
+      description: >
+        Reads ~/.ssh/config (following Include) and returns the concrete names of its Host lines. Wildcard patterns
+        are not machines and are left out. A missing file gives an empty list. Nothing is executed.
+      responses:
+        "200":
+          description: Machine names in the order the configuration defines them
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hosts: { type: array, items: { type: string } }
+                  count: { type: integer }
+                  config_path: { type: string }
+  /v1/ssh/hosts/{alias}:
+    get:
+      summary: What ssh resolves for one configured machine
+      description: >
+        Asks `ssh -G`, so Include, Match and wildcard blocks are applied by ssh itself. ssh's built-in default keys are
+        not listed in identity_files. Names the configuration does not define are refused.
+      parameters:
+        - { name: alias, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Resolved settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alias: { type: string }
+                  hostname: { type: string }
+                  user: { type: string }
+                  port: { type: integer }
+                  proxy_jump: { type: string }
+                  identity_files: { type: array, items: { type: string } }
+        "404": { description: The configuration does not define this name }
+        "501": { description: ssh is not installed }
   /v1/tunnels/{id}/start:
     post:
       summary: Connect a tunnel

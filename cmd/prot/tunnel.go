@@ -31,7 +31,7 @@ Commands:
   password <id_or_alias> [--stdin | --clear]                 Set, replace or remove the stored password
 
 add options:
-  --host        SSH server, as host or user@host (or a Host from ~/.ssh/config)
+  --host        SSH server: host, user@host, or a machine name from ~/.ssh/config ('prot ssh ls' lists them)
   --user        SSH user (alternative to user@host)
   --remote-port Port to reach on the remote side (required)
   --remote-host Address on the remote side (default 127.0.0.1)
@@ -243,6 +243,7 @@ func tunnelAdd(args []string) {
 	}
 	fmt.Printf("✓ Saved tunnel %q (ID: %s)\n", view.Config.Alias, view.Config.ID)
 	fmt.Printf("  Address: %s\n", view.CanonicalURL)
+	noteConfiguredHost(client, view.Config.SSHHost)
 	if view.Config.HasPassword {
 		fmt.Println("  Password stored in your OS keyring.")
 	}

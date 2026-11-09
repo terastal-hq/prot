@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/terastal-hq/prot/internal/registry"
+	"github.com/terastal-hq/prot/internal/sshconfig"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
@@ -214,5 +215,16 @@ func TestNewTunnelRequestCarriesThePasswordOnlyWhenGiven(t *testing.T) {
 	}
 	if strings.Contains(string(without), `"password"`) {
 		t.Errorf("an unset password must be omitted: %s", without)
+	}
+}
+
+func TestDescribeResolvedMachine(t *testing.T) {
+	plain := sshconfig.Resolved{HostName: "db.example.com", IdentityFiles: []string{}}
+	if describeHost(plain) != "db.example.com" || describeKeys(plain) != "agent/default" {
+		t.Errorf("plain: %q, %q", describeHost(plain), describeKeys(plain))
+	}
+	jump := sshconfig.Resolved{HostName: "10.0.0.7", ProxyJump: "bastion", IdentityFiles: []string{"~/.ssh/a", "~/.ssh/b"}}
+	if describeHost(jump) != "10.0.0.7 via bastion" || describeKeys(jump) != "~/.ssh/a, ~/.ssh/b" {
+		t.Errorf("jump: %q, %q", describeHost(jump), describeKeys(jump))
 	}
 }

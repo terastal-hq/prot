@@ -137,6 +137,9 @@ func (m *Manager) emit(st *supervisedTunnel) {
 	}
 }
 
+// SSHPath returns the ssh binary this manager runs.
+func (m *Manager) SSHPath() string { return m.sshPath }
+
 func newManager(sshPath string) *Manager {
 	return &Manager{
 		tunnels:      make(map[string]*supervisedTunnel),

@@ -65,6 +65,8 @@ func main() {
 		cmdAlias(args)
 	case "tunnel", "tunnels":
 		cmdTunnel(args)
+	case "ssh":
+		cmdSSH(args)
 	case "status":
 		cmdStatus(args)
 	case "doctor":
@@ -102,7 +104,8 @@ Routing & Discovery:
   discover         Scan listening TCP processes and HTTP services
   alias <a> <url>  Map a .localhost alias to an upstream target URL
   status           Show protd daemon health and active routes
-  tunnel <cmd>     Manage SSH tunnels (add, ls, start, stop, rm)
+  tunnel <cmd>     Manage SSH tunnels (add, ls, start, stop, rm, password)
+  ssh ls           List the machines in your ~/.ssh/config
 
 Integrations & Diagnostics:
   mcp              Run Model Context Protocol (MCP) stdio adapter

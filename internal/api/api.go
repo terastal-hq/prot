@@ -23,6 +23,8 @@ type Server struct {
 	version     string
 	gatewayAddr string
 	adminAddr   string
+	sshPath     string
+	sshConfig   string
 	mux         *http.ServeMux
 }
 
@@ -33,6 +35,10 @@ type Config struct {
 	Version     string
 	GatewayAddr string
 	AdminAddr   string
+	// SSHPath is the ssh binary used to resolve machine names; empty disables resolving.
+	SSHPath string
+	// SSHConfigPath is the ssh client configuration to read machine names from; empty means ~/.ssh/config.
+	SSHConfigPath string
 }
 
 // NewServer initializes the API routes and returns the server.
@@ -43,6 +49,8 @@ func NewServer(cfg Config) *Server {
 		version:     cfg.Version,
 		gatewayAddr: cfg.GatewayAddr,
 		adminAddr:   cfg.AdminAddr,
+		sshPath:     cfg.SSHPath,
+		sshConfig:   cfg.SSHConfigPath,
 		mux:         http.NewServeMux(),
 	}
 
@@ -87,6 +95,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v1/tunnels/{id}", s.handleDeleteTunnel)
 	s.mux.HandleFunc("PUT /v1/tunnels/{id}/password", s.handleSetTunnelPassword)
 	s.mux.HandleFunc("DELETE /v1/tunnels/{id}/password", s.handleClearTunnelPassword)
+
+	// Machines defined in the user's ssh configuration
+	s.mux.HandleFunc("GET /v1/ssh/hosts", s.handleListSSHHosts)
+	s.mux.HandleFunc("GET /v1/ssh/hosts/{alias}", s.handleGetSSHHost)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

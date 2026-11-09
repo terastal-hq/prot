@@ -35,6 +35,8 @@ type Config struct {
 	GatewayAddr string `json:"gateway_addr"`       // Proxy listener e.g. 127.0.0.1:8080
 	AdminAddr   string `json:"admin_addr"`         // Loopback API listener e.g. 127.0.0.1:4400
 	SSHPath     string `json:"ssh_path,omitempty"` // ssh binary for tunnels; empty searches PATH
+	// SSHConfigPath is the ssh client configuration machine names are read from; empty means ~/.ssh/config.
+	SSHConfigPath string `json:"ssh_config_path,omitempty"`
 
 	// Secrets keeps tunnel passwords. Nil means the OS keyring.
 	Secrets secrets.Store `json:"-"`
@@ -141,6 +143,9 @@ func New(cfg Config) (*Daemon, error) {
 		Version:     Version,
 		GatewayAddr: cfg.GatewayAddr,
 		AdminAddr:   cfg.AdminAddr,
+
+		SSHConfigPath: cfg.SSHConfigPath,
+		SSHPath:       sshBinary(tunMgr),
 	})
 
 	mcpSrv := mcp.NewServer(reg)
@@ -391,4 +396,12 @@ func (d *Daemon) writeStateFile() error {
 
 	statePath := filepath.Join(d.cfg.DataDir, "daemon.json")
 	return os.WriteFile(statePath, data, 0600)
+}
+
+// sshBinary is the ssh the tunnel manager runs, or "" when ssh is missing.
+func sshBinary(m *tunnels.Manager) string {
+	if m == nil {
+		return ""
+	}
+	return m.SSHPath()
 }
