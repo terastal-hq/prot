@@ -1233,6 +1233,18 @@ code {
   }
 }
 
+/* a multiline field keeps its prompt on the first line */
+.input-well.multi {
+  align-items: flex-start;
+}
+.input-well.multi .prompt {
+  padding-top: 8px;
+}
+.input-well.multi textarea {
+  resize: none; /* the height follows the text, so there is no drag handle */
+  overflow: hidden;
+}
+
 /* textarea inside an input well */
 .input-well textarea {
   flex: 1;
@@ -1240,6 +1252,8 @@ code {
   padding: 8px 0;
   resize: vertical;
   line-height: 1.5;
+  white-space: pre-wrap; /* wrap long lines, keep the newlines you typed */
+  overflow-wrap: anywhere; /* and break a long path or URL rather than scroll sideways */
   background: transparent;
   border: none;
   outline: none;

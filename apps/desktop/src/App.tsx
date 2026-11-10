@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { Play, Square, RotateCw, Trash2, Terminal, Pencil, Settings2, ChevronDown, Minus, Plus, Copy, Check, X, KeyRound } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { client } from "./api";
@@ -140,26 +140,70 @@ function Field(props: {
   type?: string;
   required?: boolean;
   autoFocus?: boolean;
+  /** A resizable text area instead of a single line. Ctrl or Cmd + Enter submits the form. */
+  multiline?: boolean;
+  rows?: number;
 }) {
+  const area = useRef<HTMLTextAreaElement>(null);
+  // A multiline field is as tall as its text (never fewer than `rows` lines), so there is nothing to drag.
+  const fit = () => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useLayoutEffect(fit, [props.value, props.multiline]);
+  useEffect(() => {
+    if (!props.multiline) return;
+    window.addEventListener("resize", fit); // a narrower window wraps the text onto more lines
+    return () => window.removeEventListener("resize", fit);
+  }, [props.multiline]);
+
   return (
     <div className="field">
       <label>{props.label}</label>
-      <div className="input-well">
+      <div className={`input-well ${props.multiline ? "multi" : ""}`}>
         <span className="prompt" aria-hidden="true">
           {props.prompt ?? ">"}
         </span>
-        <input
-          type={props.type ?? "text"}
-          required={props.required}
-          autoFocus={props.autoFocus}
-          placeholder={props.placeholder}
-          value={props.value}
-          onChange={(e) => props.onChange(e.target.value)}
-          spellCheck={false}
-        />
+        {props.multiline ? (
+          <textarea
+            ref={area}
+            rows={props.rows ?? 3}
+            required={props.required}
+            autoFocus={props.autoFocus}
+            placeholder={props.placeholder}
+            value={props.value}
+            onChange={(e) => props.onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            spellCheck={false}
+          />
+        ) : (
+          <input
+            type={props.type ?? "text"}
+            required={props.required}
+            autoFocus={props.autoFocus}
+            placeholder={props.placeholder}
+            value={props.value}
+            onChange={(e) => props.onChange(e.target.value)}
+            spellCheck={false}
+          />
+        )}
       </div>
     </div>
   );
+}
+
+/** A command can span lines now; on a card only the first one is shown, with a mark when there are more. */
+function commandPreview(command?: string): string {
+  const lines = (command ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return "";
+  return lines.length > 1 ? `${lines[0]} \u21b5 +${lines.length - 1}` : lines[0];
 }
 
 /**
@@ -932,7 +976,7 @@ export function App() {
                       <Status kind={kind} />
                     </div>
                     <div className="card-line">
-                      <code>&gt; {s.command || "external"}</code>
+                      <code>&gt; {commandPreview(s.command) || "external"}</code>
                       {s.port > 0 && <span className="port">:{s.port}</span>}
                       {s.pid ? <span className="dim">pid {s.pid}</span> : null}
                     </div>
@@ -1410,7 +1454,7 @@ export function App() {
           </div>
           <div className="sheet-body">
             <Field label="Name" required autoFocus placeholder="Frontend Web" value={svcName} onChange={setSvcName} />
-            <Field label="Command" required placeholder="pnpm dev" value={svcCmd} onChange={setSvcCmd} />
+            <Field label="Command" required multiline placeholder="pnpm dev" value={svcCmd} onChange={setSvcCmd} />
             <div className="form-row">
               <Field label="Alias" placeholder="web" prompt="@" value={svcAlias} onChange={setSvcAlias} />
               <Field label="Port" type="number" placeholder="3000" prompt=":" value={svcPort} onChange={setSvcPort} />
@@ -1459,6 +1503,7 @@ export function App() {
             <Field
               label="Command"
               required
+              multiline
               placeholder="pnpm dev"
               value={editForm.command}
               onChange={(v) => setEditForm({ ...editForm, command: v })}
