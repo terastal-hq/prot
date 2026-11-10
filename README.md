@@ -35,9 +35,9 @@ Or take a package for your system:
 
 <p align="center">
   <a href="https://github.com/terastal-hq/prot/blob/main/docs/installation.md#arch-linux-aur"><img src="docs/assets/buttons/arch.svg" alt="Arch Linux: install from the AUR" width="186" /></a>
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.deb"><img src="docs/assets/buttons/debian.svg" alt="Debian and Ubuntu: download the .deb" width="186" /></a>
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_linux_amd64.rpm"><img src="docs/assets/buttons/fedora.svg" alt="Fedora and RHEL: download the .rpm" width="186" /></a>
-  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.0/prot_0.2.0_aarch64.dmg"><img src="docs/assets/buttons/macos.svg" alt="macOS: download the .dmg" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.1/prot_0.2.1_linux_amd64.deb"><img src="docs/assets/buttons/debian.svg" alt="Debian and Ubuntu: download the .deb" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.1/prot_0.2.1_linux_amd64.rpm"><img src="docs/assets/buttons/fedora.svg" alt="Fedora and RHEL: download the .rpm" width="186" /></a>
+  <a href="https://github.com/terastal-hq/prot/releases/download/v0.2.1/prot_0.2.1_aarch64.dmg"><img src="docs/assets/buttons/macos.svg" alt="macOS: download the .dmg" width="186" /></a>
 </p>
 
 For other architectures, the desktop installers (`.AppImage`, `.deb`), and build instructions, see the **[Installation Guide](docs/installation.md)**.

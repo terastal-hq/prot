@@ -83,7 +83,7 @@ else
     LATEST_TAG=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
     
     if [ -z "$LATEST_TAG" ]; then
-        LATEST_TAG="v0.1.0"
+        LATEST_TAG="v0.2.1"
     fi
 
     ARCHIVE_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/prot_${OS}_${ARCH}.tar.gz"

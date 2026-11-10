@@ -27,7 +27,7 @@ import (
 )
 
 // Version of the prot daemon.
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 // Config contains runtime configuration for protd.
 type Config struct {
