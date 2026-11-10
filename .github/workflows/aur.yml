@@ -1,6 +1,7 @@
 name: Publish to AUR
 
-# Publishes protd, prot and prot-desktop (one split PKGBUILD) to the AUR.
+# Publishes two AUR package bases: prot (builds protd and prot, Go only) and prot-desktop (builds the Tauri app).
+# They are separate so that installing prot never compiles the desktop app.
 # Called by the Release workflow for every v* tag; also runnable by hand to retry or to re-publish.
 
 on:
@@ -22,10 +23,23 @@ permissions:
 
 jobs:
   publish:
-    name: Publish AUR packages
+    name: Publish ${{ matrix.base }}
     runs-on: ubuntu-latest
+    strategy:
+      # One at a time, prot first: the AUR does not let prot-desktop become its own base until the prot base no longer
+      # lists it, and a failure in prot should stop prot-desktop from being pushed against a stale prot.
+      max-parallel: 1
+      matrix:
+        include:
+          - base: prot
+            assets: |
+              ./packaging/aur/prot/protd.service
+              ./packaging/aur/prot/protd.install
+          - base: prot-desktop
+            assets: ""
     env:
       AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      PKGBUILD: packaging/aur/${{ matrix.base }}/PKGBUILD
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,8 +49,8 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
-          sed -i "s/^pkgver=.*/pkgver=${version}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
-          grep -n '^pkgver=\|^pkgrel=' packaging/aur/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${version}/; s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
+          grep -n '^pkgver=\|^pkgrel=' "$PKGBUILD"
 
       - name: Fill in the source checksum
         env:
@@ -47,18 +61,16 @@ jobs:
           version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
           sum="$(curl -fsSL "https://github.com/terastal-hq/prot/archive/refs/tags/v${version}.tar.gz" | sha256sum | cut -d' ' -f1)"
           test "${#sum}" = 64
-          sed -i "0,/^sha256sums=('SKIP'/s//sha256sums=('${sum}'/" packaging/aur/PKGBUILD
-          grep -n "^sha256sums" -A2 packaging/aur/PKGBUILD
+          sed -i "0,/^sha256sums=('SKIP'/s//sha256sums=('${sum}'/" "$PKGBUILD"
+          grep -n "^sha256sums" -A2 "$PKGBUILD"
 
-      - name: Publish prot, protd and prot-desktop to the AUR
+      - name: Publish ${{ matrix.base }} to the AUR
         if: env.AUR_SSH_PRIVATE_KEY != ''
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:
-          pkgname: prot
-          pkgbuild: ./packaging/aur/PKGBUILD
-          assets: |
-            ./packaging/aur/protd.service
-            ./packaging/aur/protd.install
+          pkgname: ${{ matrix.base }}
+          pkgbuild: ./packaging/aur/${{ matrix.base }}/PKGBUILD
+          assets: ${{ matrix.assets }}
           updpkgsums: false
           commit_username: Aditya Gupta
           commit_email: mail@adityagupta.dev

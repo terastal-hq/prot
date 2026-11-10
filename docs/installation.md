@@ -42,7 +42,9 @@ The first-party **prot Desktop** application is built with Tauri 2 + React.
 
 ### Arch Linux (AUR)
 
-prot is split into three packages, built from one PKGBUILD:
+prot is three packages from two AUR bases. `protd` and `prot` are built together from Go alone, so `yay -S prot` needs only
+`go` and compiles in seconds. The desktop app (Rust, Node and WebKit) is its own base, `prot-desktop`, and is only built
+when you ask for it:
 
 | Package | Contents | Install it when |
 |---|---|---|
@@ -54,7 +56,7 @@ prot is split into three packages, built from one PKGBUILD:
 # CLI + daemon
 yay -S prot
 
-# Desktop app (also pulls in prot and protd)
+# Desktop app (also pulls in prot and protd; compiles the app, which takes a few minutes)
 yay -S prot-desktop
 
 # Start the daemon now and at every login
