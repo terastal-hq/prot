@@ -1,0 +1,49 @@
+#compdef prot
+#
+# zsh completion for prot.
+#
+# Enable it for the current session with:  source <(prot completion zsh)   (after compinit)
+# The packages and the installer put this file in a directory on $fpath, where it loads on its own.
+#
+# This script knows nothing about prot's commands. It asks 'prot __complete' for the suggestions, so zsh, bash and
+# fish always agree.
+
+_prot() {
+    local out line value desc dir=0
+    local -a lines candidates
+
+    # The words after "prot" up to and including the one under the cursor, which is empty after a space.
+    out=$("${words[1]}" __complete "${(@)words[2,CURRENT]}" 2>/dev/null) || return 1
+    lines=("${(@f)out}")
+
+    for line in "${lines[@]}"; do
+        case $line in
+            :[0-9]*) dir=${line#:} ;;
+            "") ;;
+            *)
+                value=${line%%$'\t'*}
+                if [[ $line == *$'\t'* ]]; then
+                    desc=${line#*$'\t'}
+                    # _describe reads "value:description", so a colon inside the value has to be escaped.
+                    candidates+=("${value//:/\\:}:${desc}")
+                else
+                    candidates+=("${value//:/\\:}")
+                fi
+                ;;
+        esac
+    done
+
+    (( ${#candidates} )) && _describe -t prot 'prot' candidates
+
+    # 1 asks for file names too, 2 for directory names.
+    case $dir in
+        1) _files ;;
+        2) _files -/ ;;
+    esac
+}
+
+if [ "$funcstack[1]" = "_prot" ]; then
+    _prot "$@"
+else
+    compdef _prot prot
+fi

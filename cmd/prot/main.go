@@ -75,6 +75,10 @@ func main() {
 		cmdUpdate(args)
 	case "mcp":
 		cmdMCP(args)
+	case "completion":
+		cmdCompletion(args)
+	case "__complete":
+		cmdComplete(args)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -109,6 +113,7 @@ Routing & Discovery:
 
 Integrations & Diagnostics:
   mcp              Run Model Context Protocol (MCP) stdio adapter
+  completion <sh>  Print the shell completion script (bash, zsh or fish)
   doctor           Check environment, permissions, and toolchain
   update           Check for updates and upgrade prot in-place
   version          Print version information
