@@ -212,7 +212,40 @@ EOF
     echo -e "${GREEN}✓ Background launchd agent enabled and started${NC}"
 fi
 
-# 6. Check PATH
+# 6. Shell completion, in the directories each shell reads without any configuration. A prot that does not have the
+# 'completion' command yet (an older release) is skipped without a word.
+install_completion() {
+    local shell="$1" dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    if "$INSTALL_DIR/prot" completion "$shell" >"$dest.tmp" 2>/dev/null; then
+        mv -f "$dest.tmp" "$dest"
+        return 0
+    fi
+    rm -f "$dest.tmp"
+    return 1
+}
+
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+COMPLETION_SHELLS=""
+ZSH_FPATH_HINT=0
+if install_completion bash "$DATA_HOME/bash-completion/completions/prot"; then
+    COMPLETION_SHELLS="bash"
+    if command -v fish >/dev/null 2>&1 &&
+        install_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/prot.fish"; then
+        COMPLETION_SHELLS="$COMPLETION_SHELLS fish"
+    fi
+    if command -v zsh >/dev/null 2>&1 && install_completion zsh "$DATA_HOME/zsh/site-functions/_prot"; then
+        COMPLETION_SHELLS="$COMPLETION_SHELLS zsh"
+        ZSH_FPATH_HINT=1
+    fi
+    echo -e "${GREEN}✓ Shell completion installed for: ${COMPLETION_SHELLS}${NC}"
+    if [ "$ZSH_FPATH_HINT" = 1 ]; then
+        echo "  zsh only looks in directories on \$fpath. If Tab does not complete prot, add this to ~/.zshrc"
+        echo -e "  before the 'compinit' line: ${BOLD}fpath=(\"$DATA_HOME/zsh/site-functions\" \$fpath)${NC}"
+    fi
+fi
+
+# 7. Check PATH
 case ":$PATH:" in
     *":$INSTALL_DIR:"*)
         ;;
@@ -223,7 +256,7 @@ case ":$PATH:" in
         ;;
 esac
 
-# 7. Verification check
+# 8. Verification check
 echo -e "\n${CYAN}Running diagnostics:${NC}"
 "$INSTALL_DIR/prot" doctor || true
 

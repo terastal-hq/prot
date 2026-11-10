@@ -38,6 +38,7 @@ archives:
       - README.md
       - docs/support-matrix.md
       - scripts/install.sh
+      - completions/*
 
 nfpms:
   - id: prot-packages
@@ -54,6 +55,19 @@ nfpms:
     contents:
       - src: ./scripts/protd.service
         dst: /usr/lib/systemd/user/protd.service
+        file_info:
+          mode: 0644
+      # Shell completion, in the directories bash, zsh and fish read on their own
+      - src: ./completions/prot.bash
+        dst: /usr/share/bash-completion/completions/prot
+        file_info:
+          mode: 0644
+      - src: ./completions/_prot
+        dst: /usr/share/zsh/site-functions/_prot
+        file_info:
+          mode: 0644
+      - src: ./completions/prot.fish
+        dst: /usr/share/fish/vendor_completions.d/prot.fish
         file_info:
           mode: 0644
 

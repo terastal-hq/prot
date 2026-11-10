@@ -74,6 +74,9 @@ package_prot() {
 
   cd "$(_srcdir)"
   install -Dm755 build/prot "$pkgdir/usr/bin/prot"
+  install -Dm644 completions/prot.bash "$pkgdir/usr/share/bash-completion/completions/prot"
+  install -Dm644 completions/_prot "$pkgdir/usr/share/zsh/site-functions/_prot"
+  install -Dm644 completions/prot.fish "$pkgdir/usr/share/fish/vendor_completions.d/prot.fish"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
