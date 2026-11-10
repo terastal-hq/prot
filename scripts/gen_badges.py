@@ -26,9 +26,9 @@ GOLD, GREEN, ORANGE = "#ffd21a", "#5af451", "#fb8808"
 
 # file name, label, value, value colour, icon key (or None)
 BADGES = [
-    ("release", "prot", "v0.2.0", GOLD, None),
+    ("release", "prot", "v0.2.1", GOLD, None),
     ("go", "go", "1.27", GREEN, None),
-    ("aur", "aur", "0.2.0-1", ORANGE, "siArchlinux"),
+    ("aur", "aur", "0.2.1-1", ORANGE, "siArchlinux"),
     ("platform", "platform", "linux | macOS", GREEN, None),
     ("license", "license", "MIT", ORANGE, None),
 ]
