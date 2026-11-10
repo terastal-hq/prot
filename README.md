@@ -144,10 +144,17 @@ Tools that target a service take `id_or_alias`.
 - `set_alias`: Change a service's `.localhost` alias (takes `id_or_alias` and `alias`).
 - `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels (agents cannot create or edit them).
 
+<img src="docs/assets/headings/roadmap.svg" alt="Roadmap" />
+
+<p align="center">
+  <a href="docs/roadmap.md"><img src="docs/assets/roadmap.svg" alt="Roadmap: local HTTPS and public exposure are planned, not implemented. Read the plan." width="860" /></a>
+</p>
+
 <img src="docs/assets/headings/documentation.svg" alt="Documentation" />
 
 - **[Installation Guide](docs/installation.md)** — One-line installer, binary packages, background service management.
 - **[SSH tunnels](docs/tunnels.md)** — Setup, commands, reconnection and troubleshooting.
+- **[Roadmap](docs/roadmap.md)** — Planned: local HTTPS and public exposure. Not implemented yet.
 - **[Window Managers](docs/window-managers.md)** — Floating rules for niri, sway, i3 and Hyprland.
 - **[Platform Support Matrix](docs/support-matrix.md)** — Operating system tiers and hardware capabilities.
 - **[OpenAPI Specification](schemas/openapi.yaml)** — Complete REST API contract.

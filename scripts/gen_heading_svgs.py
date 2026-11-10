@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render README section headings as prot-themed WordArt SVGs.
 
-One SVG per "## Heading" in README.md, written to docs/assets/headings/.
+One SVG per section heading in README.md (an <img> from docs/assets/headings/, or a "## " line), written there.
 Anton is subset to the heading's own glyphs and embedded as a data URI, so
 each file is only a few KB and renders identically on GitHub.
 
@@ -80,7 +80,11 @@ def render(title: str) -> str:
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    titles = re.findall(r"^## (.+)$", README.read_text(), re.M)
+    # The README shows each heading as an image, so read the titles from those (and from any plain "## " line).
+    text = README.read_text()
+    titles = re.findall(r'<img src="docs/assets/headings/[^"]+" alt="([^"]+)"', text)
+    titles += re.findall(r"^## (.+)$", text, re.M)
+    titles = list(dict.fromkeys(titles))
     for old in OUT_DIR.glob("*.svg"):
         old.unlink()
     for title in titles:
