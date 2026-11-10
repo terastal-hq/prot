@@ -188,6 +188,50 @@ prot doctor — Diagnostic and Support Matrix Check
 
 ---
 
+## 7. Shell Completion
+
+`prot` completes in **bash**, **zsh** and **fish**: commands, subcommands and options, and, from the running daemon, the
+aliases of your services and tunnels, the ids of discovered processes, and the machines in your `~/.ssh/config`
+(for `--host`).
+
+```text
+$ prot start <Tab>
+api     web     worker
+$ prot tunnel add db --host <Tab>
+bastion   prod-db   prod-web
+```
+
+The `.deb`, `.rpm` and AUR packages, and the curl installer, set it up for you: open a new shell. The installer puts the
+files in the user directories (`~/.local/share/bash-completion/completions`, `~/.config/fish/completions` and
+`~/.local/share/zsh/site-functions`), so it needs no change to your shell's configuration, with two exceptions:
+
+- **bash** loads files from there only when the `bash-completion` package is installed, which most Linux distributions
+  have by default and macOS does not.
+- **zsh** only reads directories on `$fpath`. If Tab does nothing, add this to `~/.zshrc` before `compinit`:
+
+  ```zsh
+  fpath=(~/.local/share/zsh/site-functions $fpath)
+  ```
+
+To set it up by hand, or to try it in one session, `prot completion <shell>` prints the script:
+
+```bash
+# bash: add to ~/.bashrc
+source <(prot completion bash)
+
+# zsh: add to ~/.zshrc, after compinit
+source <(prot completion zsh)
+
+# fish: keep it
+prot completion fish > ~/.config/fish/completions/prot.fish
+```
+
+The scripts contain no list of commands; each Tab runs `prot __complete`, so the suggestions always match the `prot`
+you have installed and are the same in all three shells. A lookup that needs the daemon waits at most 1.5 seconds and
+says nothing when the daemon is not running, so Tab never prints an error onto your prompt.
+
+---
+
 ## 8. Updating prot
 
 ### Installed from a package manager (AUR, `.deb`, `.rpm`)
