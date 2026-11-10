@@ -9,6 +9,7 @@
 # - schemas/openapi.yaml
 # - apps/desktop/src-tauri/Cargo.lock
 # - README.md and site/index.html (the download button links)
+# - scripts/install.sh (the fallback release tag)
 #
 # Usage:
 #   scripts/bump_version.sh <patch|minor|major|x.y.z>
@@ -87,6 +88,9 @@ sed -i -E "s#releases/download/v[0-9]+\.[0-9]+\.[0-9]+/prot_[0-9]+\.[0-9]+\.[0-9
 # ...and the "install v0.x.y" label above the install command on the website
 sed -i -E "s#install v[0-9]+\.[0-9]+\.[0-9]+#install v$NEW_VERSION#" "$ROOT_DIR/site/index.html"
 
+# ...and the release the installer falls back to when the GitHub API does not answer
+sed -i -E "s#LATEST_TAG=\"v[0-9]+\.[0-9]+\.[0-9]+\"#LATEST_TAG=\"v$NEW_VERSION\"#" "$ROOT_DIR/scripts/install.sh"
+
 echo "✓ Updated version to $NEW_VERSION across all project manifests:"
 echo "  • internal/daemon/daemon.go"
 echo "  • apps/desktop/package.json"
@@ -95,3 +99,4 @@ echo "  • apps/desktop/src-tauri/tauri.conf.json"
 echo "  • schemas/openapi.yaml"
 echo "  • apps/desktop/src-tauri/Cargo.lock"
 echo "  • README.md and site/index.html (download button links)"
+echo "  • scripts/install.sh (fallback release tag)"
