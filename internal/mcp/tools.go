@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/terastal-hq/prot/internal/registry"
 	"github.com/terastal-hq/prot/internal/storage"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
@@ -100,6 +102,8 @@ func (s *Server) toolSpecs() []toolSpec {
 		),
 		s.logsTool(),
 		s.listTunnelsTool(),
+		s.listSSHHostsTool(),
+		s.addTunnelTool(),
 		serviceTool(
 			"start_tunnel",
 			"Connect a saved SSH tunnel by id or alias and wait until it is reachable (or report why it is not).",
@@ -181,6 +185,8 @@ func (s *Server) toolSpecs() []toolSpec {
 				return fmt.Sprintf("Restarted service %s (%s)", restarted.Name, restarted.Status), nil
 			},
 		),
+		s.addServiceTool(),
+		s.updateServiceTool(),
 		s.aliasTool(),
 	}
 }
@@ -235,6 +241,196 @@ func (s *Server) logsTool() toolSpec {
 	}
 }
 
+// serviceFieldProps are the settings add_service and update_service share.
+func serviceFieldProps() map[string]any {
+	return map[string]any{
+		"name": map[string]string{"type": "string", "description": "Display name"},
+		"cmd": map[string]string{
+			"type": "string",
+			"description": "Shell command that starts the service, run with `sh -c`. " +
+				"Include any arguments, e.g. `npm run dev -- --host 127.0.0.1`.",
+		},
+		"cwd": map[string]string{"type": "string", "description": "Absolute working directory for the command"},
+		"port": map[string]string{
+			"type":        "integer",
+			"description": "TCP port the service listens on; the .localhost route targets it. Also passed as $PORT.",
+		},
+		"alias": map[string]string{
+			"type": "string",
+			"description": "Name used for http://<alias>.localhost. Lowercase letters, digits and hyphens. " +
+				"Defaults to the name, lowercased with spaces turned into hyphens.",
+		},
+		"auto_port": map[string]string{
+			"type":        "boolean",
+			"description": "Pick a free port at each start and pass it as $PORT (overrides port)",
+		},
+		"auto_start": map[string]string{"type": "boolean", "description": "Start the service whenever protd starts"},
+		"env": map[string]any{
+			"type":                 "object",
+			"additionalProperties": stringProp,
+			"description": "Environment variables set on top of the daemon's environment. Values are literal: " +
+				"$VAR is not expanded, so give a full PATH if you override it.",
+		},
+		"restart_policy": map[string]any{
+			"type":        "string",
+			"enum":        []string{storage.RestartNever, storage.RestartOnFailure, storage.RestartAlways},
+			"description": "When to restart the process after it exits (default on-failure)",
+		},
+	}
+}
+
+func (s *Server) addServiceTool() toolSpec {
+	props := serviceFieldProps()
+	props["start"] = map[string]string{"type": "boolean", "description": "Start the service right after registering it"}
+
+	return toolSpec{
+		tool: Tool{
+			Name: "add_service",
+			Description: "Register a new managed development service so it can be started, routed at " +
+				"http://<alias>.localhost and supervised. The command runs as the user, in the daemon's " +
+				"environment (login-shell PATH) plus env. Set port to the port the server listens on, or " +
+				"auto_port to have one assigned and passed as $PORT. Servers should listen on 127.0.0.1 or localhost. " +
+				"Use update_service to change one later.",
+			InputSchema: objectSchema([]string{"name", "cmd"}, props),
+		},
+		run: func(ctx context.Context, args map[string]any) (string, error) {
+			svc := storage.Service{RestartPolicy: storage.RestartOnFailure}
+			var err error
+			if svc.Name, err = stringArg(args, "name"); err != nil {
+				return "", err
+			}
+			if svc.Command, err = stringArg(args, "cmd"); err != nil {
+				return "", err
+			}
+			if svc.Cwd, err = stringArg(args, "cwd"); err != nil {
+				return "", err
+			}
+			if svc.Alias, err = stringArg(args, "alias"); err != nil {
+				return "", err
+			}
+			if svc.Alias == "" {
+				svc.Alias = strings.ToLower(strings.Join(strings.Fields(svc.Name), "-"))
+			}
+			if v, ok, err := uintArg(args, "port"); err != nil {
+				return "", err
+			} else if ok {
+				svc.Port = v
+			}
+			if v, ok, err := boolArg(args, "auto_port"); err != nil {
+				return "", err
+			} else if ok {
+				svc.AutoPort = v
+			}
+			if v, ok, err := boolArg(args, "auto_start"); err != nil {
+				return "", err
+			} else if ok {
+				svc.AutoStart = v
+			}
+			if v, ok, err := stringOptArg(args, "restart_policy"); err != nil {
+				return "", err
+			} else if ok {
+				svc.RestartPolicy = v
+			}
+			if env, ok, err := envArg(args, "env"); err != nil {
+				return "", err
+			} else if ok {
+				svc.Env = env
+			}
+			start, _, err := boolArg(args, "start")
+			if err != nil {
+				return "", err
+			}
+
+			view, err := s.reg.CreateService(ctx, svc)
+			if err != nil {
+				return "", err
+			}
+			summary := fmt.Sprintf("Registered service %s (id %s)", view.Name, view.ID)
+			if start {
+				started, err := s.reg.StartService(ctx, view.ID)
+				if err != nil {
+					return "", fmt.Errorf("registered %s (id %s) but it failed to start: %w", view.Name, view.ID, err)
+				}
+				view = started
+				summary += fmt.Sprintf("; started (%s)", view.Status)
+			}
+			body, err := prettyJSON(view)
+			return summary + "\n" + body, err
+		},
+	}
+}
+
+func (s *Server) updateServiceTool() toolSpec {
+	return toolSpec{
+		tool: Tool{
+			Name: "update_service",
+			Description: "Change a registered service's settings. Only the fields you pass change. env replaces " +
+				"the whole map (pass {} to clear it). A running service keeps its old command, cwd, port, " +
+				"env and restart policy until restart_service; alias and name apply immediately.",
+			InputSchema: objectSchema([]string{"id_or_alias"}, func() map[string]any {
+				props := serviceFieldProps()
+				props["id_or_alias"] = stringProp
+				props["lan_exposed"] = map[string]any{
+					"type":        "boolean",
+					"description": "Make the route reachable from other machines on the network. Leave unset unless asked.",
+				}
+				return props
+			}()),
+		},
+		run: func(ctx context.Context, args map[string]any) (string, error) {
+			id, err := serviceArg(args)
+			if err != nil {
+				return "", err
+			}
+
+			var patch registry.ServicePatch
+			for key, dst := range map[string]**string{
+				"name": &patch.Name, "cmd": &patch.Command, "cwd": &patch.Cwd,
+				"alias": &patch.Alias, "restart_policy": &patch.RestartPolicy,
+			} {
+				v, ok, err := stringOptArg(args, key)
+				if err != nil {
+					return "", err
+				}
+				if ok {
+					*dst = &v
+				}
+			}
+			if v, ok, err := uintArg(args, "port"); err != nil {
+				return "", err
+			} else if ok {
+				patch.Port = &v
+			}
+			for key, dst := range map[string]**bool{
+				"auto_port": &patch.AutoPort, "auto_start": &patch.AutoStart, "lan_exposed": &patch.LANExposed,
+			} {
+				v, ok, err := boolArg(args, key)
+				if err != nil {
+					return "", err
+				}
+				if ok {
+					*dst = &v
+				}
+			}
+			if env, ok, err := envArg(args, "env"); err != nil {
+				return "", err
+			} else if ok {
+				if env == nil {
+					env = map[string]string{}
+				}
+				patch.Env = &env
+			}
+
+			view, err := s.reg.UpdateService(ctx, id, patch)
+			if err != nil {
+				return "", err
+			}
+			body, err := prettyJSON(view)
+			return fmt.Sprintf("Updated service %s; restart it for command, cwd, port and env changes to apply\n%s", view.Name, body), err
+		},
+	}
+}
+
 func (s *Server) aliasTool() toolSpec {
 	return toolSpec{
 		tool: Tool{
@@ -277,7 +473,7 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 		if spec.tool.Name != name {
 			continue
 		}
-		text, err := spec.run(ctx, args)
+		text, err := spec.run(registry.WithSource(ctx, registry.SourceMCP), args)
 		if err != nil {
 			return nil, err
 		}
@@ -295,6 +491,72 @@ func serviceArg(args map[string]any) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("id_or_alias is required")
+}
+
+// stringOptArg reads an optional string argument and reports whether it was given.
+func stringOptArg(args map[string]any, key string) (string, bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return "", false, nil
+	}
+	v, isString := raw.(string)
+	if !isString {
+		return "", false, fmt.Errorf("%s must be a string", key)
+	}
+	return strings.TrimSpace(v), true, nil
+}
+
+// stringArg reads an optional string argument, returning "" when it is absent.
+func stringArg(args map[string]any, key string) (string, error) {
+	v, _, err := stringOptArg(args, key)
+	return v, err
+}
+
+// uintArg reads an optional non-negative whole number.
+func uintArg(args map[string]any, key string) (uint32, bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return 0, false, nil
+	}
+	n, isNumber := raw.(float64)
+	if !isNumber || n != math.Trunc(n) || n < 0 || n > 65535 {
+		return 0, false, fmt.Errorf("%s must be a whole number between 0 and 65535", key)
+	}
+	return uint32(n), true, nil
+}
+
+// boolArg reads an optional boolean.
+func boolArg(args map[string]any, key string) (bool, bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return false, false, nil
+	}
+	v, isBool := raw.(bool)
+	if !isBool {
+		return false, false, fmt.Errorf("%s must be true or false", key)
+	}
+	return v, true, nil
+}
+
+// envArg reads an optional object of string values.
+func envArg(args map[string]any, key string) (map[string]string, bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return nil, false, nil
+	}
+	obj, isObject := raw.(map[string]any)
+	if !isObject {
+		return nil, false, fmt.Errorf("%s must be an object of string values", key)
+	}
+	out := make(map[string]string, len(obj))
+	for k, v := range obj {
+		s, isString := v.(string)
+		if !isString {
+			return nil, false, fmt.Errorf("%s.%s must be a string", key, k)
+		}
+		out[k] = s
+	}
+	return out, true, nil
 }
 
 func prettyJSON(v any) (string, error) {

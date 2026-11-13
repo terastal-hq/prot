@@ -173,6 +173,7 @@ func New(cfg Config) (*Daemon, error) {
 
 	mcpSrv := mcp.NewServer(reg)
 	mcpSrv.SetVersion(Version)
+	mcpSrv.SetSSH(cfg.SSHConfigPath, sshBinary(tunMgr))
 
 	d := &Daemon{
 		cfg:        cfg,

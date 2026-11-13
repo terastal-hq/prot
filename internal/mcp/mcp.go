@@ -56,6 +56,9 @@ type Server struct {
 	reg     *registry.Registry
 	version string
 	tools   []toolSpec
+
+	sshConfig string // ssh client configuration to read machine names from; empty means ~/.ssh/config
+	sshPath   string // the ssh binary, used to resolve what a machine name means
 }
 
 // NewServer constructs an MCP Server.
@@ -63,6 +66,12 @@ func NewServer(reg *registry.Registry) *Server {
 	s := &Server{reg: reg, version: "dev"}
 	s.tools = s.toolSpecs()
 	return s
+}
+
+// SetSSH tells the server where machine names come from for list_ssh_hosts: the ssh client configuration (empty
+// means ~/.ssh/config) and the ssh binary (empty when ssh is not installed).
+func (s *Server) SetSSH(configPath, sshPath string) {
+	s.sshConfig, s.sshPath = configPath, sshPath
 }
 
 // SetVersion sets the version reported to clients in the initialize handshake.
