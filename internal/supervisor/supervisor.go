@@ -206,7 +206,9 @@ func (s *Supervisor) launchLocked(rp *runningProcess) error {
 func (s *Supervisor) awaitReady(ctx context.Context, rp *runningProcess, r *run, port uint32) {
 	if port > 0 && !netutil.WaitForPort(ctx, port, readyTimeout) {
 		if ctx.Err() == nil {
-			rp.logs.Append(StreamSystem, fmt.Sprintf("Port %d did not open within %s", port, readyTimeout))
+			rp.logs.Append(StreamSystem, fmt.Sprintf(
+				"Port %d did not open on 127.0.0.1 or ::1 within %s; "+
+					"check that the command listens on this port and on localhost", port, readyTimeout))
 		}
 		return
 	}

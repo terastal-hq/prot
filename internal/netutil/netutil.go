@@ -31,8 +31,28 @@ func FreePort() (uint32, error) {
 	return uint32(addr.Port), nil
 }
 
-// WaitForPort polls 127.0.0.1:port until it accepts a connection, the timeout elapses or ctx is cancelled.
-// It reports whether the port became reachable.
+// DialLoopback dials addr like d.DialContext, but when addr is on 127.0.0.1 and nothing answers there it also
+// tries [::1] on the same port.
+//
+// Dev servers often bind "localhost", which Node 17 and later resolve to ::1 first, so a server can be up on the
+// IPv6 loopback and invisible on IPv4. The error returned when both fail is the IPv4 one.
+func DialLoopback(ctx context.Context, d *net.Dialer, network, addr string) (net.Conn, error) {
+	conn, err := d.DialContext(ctx, network, addr)
+	if err == nil {
+		return conn, nil
+	}
+	host, port, splitErr := net.SplitHostPort(addr)
+	if splitErr != nil || host != "127.0.0.1" || ctx.Err() != nil {
+		return nil, err
+	}
+	if conn6, err6 := d.DialContext(ctx, network, net.JoinHostPort("::1", port)); err6 == nil {
+		return conn6, nil
+	}
+	return nil, err
+}
+
+// WaitForPort polls localhost:port, on both the IPv4 and IPv6 loopback, until it accepts a connection, the
+// timeout elapses or ctx is cancelled. It reports whether the port became reachable.
 func WaitForPort(ctx context.Context, port uint32, timeout time.Duration) bool {
 	const (
 		dialTimeout  = 150 * time.Millisecond
@@ -47,7 +67,7 @@ func WaitForPort(ctx context.Context, port uint32, timeout time.Duration) bool {
 
 	dialer := net.Dialer{Timeout: dialTimeout}
 	for {
-		if conn, err := dialer.DialContext(ctx, "tcp", addr); err == nil {
+		if conn, err := DialLoopback(ctx, &dialer, "tcp", addr); err == nil {
 			_ = conn.Close()
 			return true
 		}

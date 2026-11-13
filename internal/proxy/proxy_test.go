@@ -446,3 +446,40 @@ func TestSetRoutePreservesCreatedAt(t *testing.T) {
 		t.Errorf("a previously returned copy must not change: %+v", first)
 	}
 }
+
+// A dev server bound to "localhost" can end up listening on ::1 only. The route still says 127.0.0.1.
+func TestProxyReachesIPv6OnlyUpstream(t *testing.T) {
+	ln, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	}
+	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("hello over ipv6"))
+	}))
+	upstream.Listener = ln
+	upstream.Start()
+	defer upstream.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	router := NewRouter()
+	if err := router.SetRoute("web", fmt.Sprintf("http://127.0.0.1:%d", port), false); err != nil {
+		t.Fatal(err)
+	}
+	proxySrv := NewServer(router, ServerOptions{ListenAddr: "127.0.0.1:0"})
+	if err := proxySrv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = proxySrv.Close(context.Background()) }()
+
+	req, _ := http.NewRequest(http.MethodGet, "http://"+proxySrv.Addr()+"/", nil)
+	req.Host = "web.localhost"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "hello over ipv6" {
+		t.Errorf("want 200 from the IPv6-only upstream, got %d %q", resp.StatusCode, body)
+	}
+}

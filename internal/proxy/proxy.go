@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/terastal-hq/prot/internal/netutil"
 )
 
 // Route defines an upstream target for a given alias/hostname.
@@ -169,10 +171,14 @@ func NewServer(router *Router, opts ServerOptions) *Server {
 		ErrorHandler:  s.errorHandler,
 		// Upstreams are always loopback ports, so no HTTP(S)_PROXY handling.
 		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   5 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
+			// Upstreams are registered as 127.0.0.1:port, but a dev server bound to "localhost" may only be
+			// listening on ::1, so the dial falls back to it.
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return netutil.DialLoopback(ctx, &net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}, network, addr)
+			},
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
