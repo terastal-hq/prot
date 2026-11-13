@@ -237,7 +237,8 @@ func (r *Registry) toServiceView(s storage.Service) ServiceView {
 	if ps, ok := r.supervisor.GetState(s.ID); ok {
 		view.Status = ps.Status
 		view.PID = ps.PID
-		if ps.AssignedPort > 0 {
+		// A stopped service keeps the port of its last run in its state; the configured one is what counts.
+		if ps.AssignedPort > 0 && ps.Status != storage.StatusStopped {
 			view.Port = ps.AssignedPort
 		}
 	}
@@ -431,7 +432,8 @@ func (r *Registry) syncRoute(oldAlias string, svc *storage.Service) {
 		return
 	}
 	target := rt.TargetURL
-	if _, running := r.supervisor.GetState(svc.ID); !running && svc.Port > 0 {
+	// The supervisor remembers a service after it stops, so being known to it does not mean being live.
+	if ps, known := r.supervisor.GetState(svc.ID); (!known || ps.Status == storage.StatusStopped) && svc.Port > 0 {
 		target = netutil.LoopbackURL(svc.Port)
 	}
 	if oldAlias != svc.Alias {
