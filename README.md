@@ -81,6 +81,14 @@ prot start web
 open http://web.localhost:8080
 ```
 
+Change it later without removing it. Only the options you give change, and a running service picks up a new command,
+port or environment on `prot restart`:
+```bash
+prot edit web --cmd "npm run dev -- --host 127.0.0.1" --env NODE_ENV=development
+prot restart web
+```
+Servers that bind `localhost` and end up on IPv6 (`::1`) work too: prot checks and proxies both loopback addresses.
+
 ### 4. View Real-Time Logs
 ```bash
 prot logs web -f
@@ -131,6 +139,19 @@ so agents see the same services, logs and process state as the CLI and the deskt
 belong to the daemon and keep running when the agent disconnects. If `protd` is not running, tool calls fail with
 a clear error until it is (`systemctl --user start protd`).
 
+### What agents can do
+
+Agents can register and edit services (`add_service`, `update_service`), which means they can choose commands that run as
+you. That is the same power as `prot add`, so treat an MCP client like a shell you have handed to the agent. Every
+registration and edit made over MCP is recorded in the daemon's event log with `"source":"mcp"`, the command involved and
+the names (never the values) of any environment variables changed. Agents can also create tunnels (`add_tunnel`), but only to a host
+you have already set up for key login with its host key trusted; a host that would need a prompt makes the call fail and saves nothing. Agents still cannot
+delete services, edit or delete tunnels, or use passwords.
+
+Services start with the `PATH` of your login shell, so tools from nvm, asdf, cargo or `~/.local/bin` are found even though
+`protd` runs under systemd. Add `-login-shell-path=false` to the `protd` command line to use the daemon's own `PATH`
+instead, or set `PATH` for one service with `prot add --env` / `prot edit --env`.
+
 ### Available MCP Tools
 
 Tools that target a service take `id_or_alias`.
@@ -140,9 +161,13 @@ Tools that target a service take `id_or_alias`.
 - `get_service_url`: Obtain the canonical `.localhost` URL.
 - `get_service_logs`: Retrieve bounded recent stdout/stderr logs.
 - `ensure_running`: Idempotently start a required service if not running.
+- `add_service`: Register a new managed service (`name`, `cmd`, and optionally `cwd`, `port`, `alias`, `auto_port`, `auto_start`, `env`, `restart_policy`, `start`).
+- `update_service`: Change a registered service's command, working directory, port, environment, alias and more. Only the fields you pass change.
 - `start_service`, `stop_service`, `restart_service`: Process controls.
 - `set_alias`: Change a service's `.localhost` alias (takes `id_or_alias` and `alias`).
-- `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels (agents cannot create or edit them).
+- `list_tunnels`, `start_tunnel`, `stop_tunnel`: See and control saved SSH tunnels.
+- `list_ssh_hosts`: List the machine names in `~/.ssh/config` that `add_tunnel` accepts; pass `host` to see how ssh resolves one. Read-only.
+- `add_tunnel`: Create and connect an SSH tunnel (`alias`, `host`, `remote_port`, optionally `user`, `remote_host`, `local_port`). Only works for a host ssh already reaches without a prompt (key login set up, host key trusted); otherwise it fails and saves nothing. No passwords or extra ssh options.
 
 <img src="docs/assets/headings/roadmap.svg" alt="Roadmap" />
 

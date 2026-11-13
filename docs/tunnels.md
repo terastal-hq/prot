@@ -129,9 +129,18 @@ straight away; a stopped one stays stopped and uses them the next time it connec
 does not touch a live connection. A refused edit (an alias that is taken, a missing remote port, ...) changes
 nothing and leaves the connection up. Renaming moves the `.localhost` address: the old name stops resolving.
 
-The desktop app's Tunnels tab does the same with a form, and the settings button on a tunnel's card edits it. Agents get `list_tunnels`, `start_tunnel` and
-`stop_tunnel` over MCP; they see `has_password` but can never read or set a password. There is deliberately no MCP
-tool to create or edit a tunnel: that would let an agent open an SSH connection to an arbitrary host.
+The desktop app's Tunnels tab does the same with a form, and the settings button on a tunnel's card edits it. Agents get `list_tunnels`, `start_tunnel`, `stop_tunnel`, `add_tunnel` and `list_ssh_hosts` (the machine names in `~/.ssh/config`, read-only) over MCP; they see `has_password` but can never read
+or set a password.
+
+`add_tunnel` (alias, host, remote_port, and optionally user, remote_host and local_port) only works for a machine that is
+already set up: ssh must reach it with no prompt at all, using a key from `ssh-agent` or `~/.ssh` that the server accepts
+(`ssh-copy-id`) and a host key you have already trusted (connect once from a terminal). The tool connects the tunnel and
+waits for it. If it does not come up, the tunnel is deleted again, nothing is saved, and the agent is told to ask you to
+set the host up. There is no way to pass a password, an identity file or extra ssh options, and ssh always runs with
+`BatchMode`. Tunnels it creates are saved with `auto_connect`. The event log records the creation with `"source":"mcp"`.
+
+This is a real grant of power: an agent can open a tunnel to any machine your keys already let you into. Editing or
+deleting a tunnel is still left to you.
 
 ## How it behaves
 
