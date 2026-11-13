@@ -23,6 +23,7 @@ import (
 	"github.com/terastal-hq/prot/internal/secrets"
 	"github.com/terastal-hq/prot/internal/security"
 	"github.com/terastal-hq/prot/internal/storage"
+	"github.com/terastal-hq/prot/internal/supervisor"
 	"github.com/terastal-hq/prot/internal/tunnels"
 )
 
@@ -38,6 +39,10 @@ type Config struct {
 	// SSHConfigPath is the ssh client configuration machine names are read from; empty means ~/.ssh/config.
 	SSHConfigPath string `json:"ssh_config_path,omitempty"`
 
+	// LoginShellPATH gives managed services the PATH of the user's login shell, so tools installed by nvm, asdf,
+	// cargo and the like are found even when protd was started by systemd or launchd with a minimal PATH.
+	LoginShellPATH bool `json:"login_shell_path"`
+
 	// Secrets keeps tunnel passwords. Nil means the OS keyring.
 	Secrets secrets.Store `json:"-"`
 }
@@ -49,6 +54,8 @@ func DefaultConfig() Config {
 		DataDir:     filepath.Join(home, ".prot"),
 		GatewayAddr: "127.0.0.1:8080",
 		AdminAddr:   "127.0.0.1:4400",
+
+		LoginShellPATH: true,
 	}
 }
 
@@ -139,6 +146,18 @@ func New(cfg Config) (*Daemon, error) {
 		Secrets:     secretStore,
 		GatewayHost: gwPort,
 	})
+
+	// Resolved before anything can start a service (recoverState auto-starts some). A failure only costs the
+	// extra directories, so it is logged and the daemon's own PATH is used.
+	if cfg.LoginShellPATH {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if login, err := supervisor.LoginShellPATH(ctx); err != nil {
+			log.Printf("protd: could not read PATH from the login shell, services use protd's own PATH: %v", err)
+		} else {
+			reg.SetServicePATH(supervisor.MergePATH(login, os.Getenv("PATH")))
+		}
+		cancel()
+	}
 
 	// 6. Initialize REST API Server & MCP Server
 	apiSrv := api.NewServer(api.Config{

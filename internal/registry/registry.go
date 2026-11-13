@@ -101,6 +101,9 @@ func New(cfg Config) *Registry {
 	return r
 }
 
+// SetServicePATH makes managed services start with path as their PATH instead of the daemon's own.
+func (r *Registry) SetServicePATH(path string) { r.supervisor.SetBasePATH(path) }
+
 func (r *Registry) handleSupervisorStatus(serviceID, status string, port uint32) {
 	// Called from supervisor goroutines, so there is no request context to inherit.
 	ctx := context.Background()

@@ -25,6 +25,7 @@ func main() {
 	adminAddr := flag.String("admin", "127.0.0.1:4400", "Loopback management API address")
 	dataDir := flag.String("data-dir", "", "Configuration and state directory (default $PROT_DATA_DIR, then ~/.prot)")
 	sshConfig := flag.String("ssh-config", "", "ssh client configuration to read machine names from (default ~/.ssh/config)")
+	loginPath := flag.Bool("login-shell-path", true, "Give services the PATH of your login shell (finds nvm, asdf, cargo tools)")
 	versionFlag := flag.Bool("version", false, "Print daemon version and exit")
 	flag.Parse()
 
@@ -49,6 +50,7 @@ func main() {
 	}
 
 	cfg.SSHConfigPath = *sshConfig
+	cfg.LoginShellPATH = *loginPath
 
 	d, err := daemon.New(cfg)
 	if err != nil {

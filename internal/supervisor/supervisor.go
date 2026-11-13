@@ -69,6 +69,16 @@ type Supervisor struct {
 	onStatus  func(serviceID, status string, port uint32)
 
 	restartBase time.Duration // overridable in tests
+
+	basePATH string // replaces the daemon's own PATH for services when set; guarded by mu
+}
+
+// SetBasePATH makes services start with path as their PATH instead of the daemon's own. A service's configured
+// environment still overrides it. It affects processes started afterwards.
+func (s *Supervisor) SetBasePATH(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.basePATH = path
 }
 
 // New constructs a Supervisor. onStatus, if set, is called (without any supervisor lock held) whenever a
@@ -166,7 +176,7 @@ func (s *Supervisor) launchLocked(rp *runningProcess) error {
 	// Commands run through the shell so pipelines and flags work. Process groups let us signal the whole tree.
 	cmd := exec.CommandContext(ctx, "sh", "-c", script)
 	cmd.Dir = svc.Cwd
-	cmd.Env = processEnv(svc, port)
+	cmd.Env = processEnv(svc, port, s.currentBasePATH())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Writers (not StdoutPipe) so Cmd.Wait drains all output before returning: the last lines of a process that
@@ -439,8 +449,19 @@ func (s *Supervisor) FollowLogs(id string) (<-chan LogEntry, func(), error) {
 	return ch, unsub, nil
 }
 
-func processEnv(svc storage.Service, port uint32) []string {
+func (s *Supervisor) currentBasePATH() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.basePATH
+}
+
+// processEnv builds a service's environment: the daemon's, with PATH replaced by basePATH when given, then the
+// service's own variables (which win, because the last duplicate takes effect), then PORT.
+func processEnv(svc storage.Service, port uint32, basePATH string) []string {
 	env := os.Environ()
+	if basePATH != "" {
+		env = append(env, "PATH="+basePATH)
+	}
 	for k, v := range svc.Env {
 		env = append(env, k+"="+v)
 	}
