@@ -74,6 +74,19 @@ func tunnelEditFlags() []flagSpec {
 	return append([]flagSpec{{Name: "--alias", Value: valueText, Help: "New .localhost alias"}}, tunnelSettings()...)
 }
 
+// serviceSettings are the options 'add' and 'edit' share.
+func serviceSettings() []flagSpec {
+	return []flagSpec{
+		{Name: "--cmd", Value: valueText, Help: "Command to run"},
+		{Name: "--port", Value: valueText, Help: "Service port"},
+		{Name: "--cwd", Value: valueDir, Help: "Working directory"},
+		{Name: "--env", Value: valueText, Repeat: true, Help: "Environment variable, KEY=VALUE"},
+		{Name: "--restart-policy", Value: valueText, Help: "no, on-failure or always"},
+		{Name: "--auto-port", Help: "Assign a free port automatically"},
+		{Name: "--auto-start", Help: "Start the service whenever protd starts"},
+	}
+}
+
 var tunnelSpecs = []commandSpec{
 	{Name: "add", Help: "Save an SSH tunnel", Args: []listKind{listName}, Flags: tunnelAddFlags()},
 	{Name: "ls", Aliases: []string{"list"}, Help: "List tunnels and their state", Flags: []flagSpec{jsonFlag}},
@@ -112,14 +125,18 @@ var commandSpecs = []commandSpec{
 	{Name: "inspect", Help: "Show detailed configuration and runtime state", Args: []listKind{listServices}},
 	{
 		Name: "add", Help: "Register a new managed service", Args: []listKind{listName},
-		Flags: []flagSpec{
-			{Name: "--cmd", Value: valueText, Help: "Command to run"},
-			{Name: "--alias", Value: valueText, Help: "Local .localhost alias"},
-			{Name: "--port", Value: valueText, Help: "Service port"},
-			{Name: "--cwd", Value: valueDir, Help: "Working directory"},
-			{Name: "--auto-port", Help: "Assign a free port automatically"},
-			{Name: "--auto-start", Help: "Start the service whenever protd starts"},
-		},
+		Flags: append(serviceSettings(),
+			flagSpec{Name: "--alias", Value: valueText, Help: "Local .localhost alias"},
+		),
+	},
+	{
+		Name: "edit", Help: "Change a registered service", Args: []listKind{listServices},
+		Flags: append(serviceSettings(),
+			flagSpec{Name: "--name", Value: valueText, Help: "New display name"},
+			flagSpec{Name: "--alias", Value: valueText, Help: "New .localhost alias"},
+			flagSpec{Name: "--unset-env", Value: valueText, Repeat: true, Help: "Remove an environment variable"},
+			flagSpec{Name: "--clear-env", Help: "Remove every environment variable first"},
+		),
 	},
 	{Name: "start", Help: "Start a managed service", Args: []listKind{listServices}},
 	{Name: "stop", Help: "Stop a running managed service", Args: []listKind{listServices}},

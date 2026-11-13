@@ -47,6 +47,8 @@ func main() {
 		cmdInspect(args)
 	case "add":
 		cmdAdd(args)
+	case "edit":
+		cmdEdit(args)
 	case "start":
 		cmdStart(args)
 	case "stop":
@@ -97,6 +99,7 @@ Service Management:
   ls               List all registered and discovered services
   inspect <id>     Show detailed configuration and runtime state
   add <name>       Register a new managed service
+  edit <id>        Change a registered service's command, port, env, alias...
   start <id>       Start a managed service
   stop <id>        Stop a running managed service
   restart <id>     Restart a managed service
@@ -205,54 +208,6 @@ func cmdInspect(args []string) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(svc)
-}
-
-func cmdAdd(args []string) {
-	if len(args) < 1 {
-		fmt.Println("Usage: prot add <name> --cmd \"<command>\" " +
-			"[--alias <alias>] [--port <port>] [--cwd <path>] [--auto-port]")
-		os.Exit(1)
-	}
-
-	name := args[0]
-	fs := flag.NewFlagSet("add", flag.ExitOnError)
-	cmdFlag := fs.String("cmd", "", "Command to run")
-	aliasFlag := fs.String("alias", "", "Local .localhost alias")
-	portFlag := fs.Uint("port", 0, "Service port")
-	cwdFlag := fs.String("cwd", "", "Working directory")
-	autoPortFlag := fs.Bool("auto-port", false, "Automatically assign free port")
-	autoStartFlag := fs.Bool("auto-start", false, "Start the service whenever protd starts")
-
-	_ = fs.Parse(args[1:])
-
-	if *cmdFlag == "" {
-		fmt.Fprintf(os.Stderr, "Error: --cmd is required\n")
-		os.Exit(1)
-	}
-
-	if *aliasFlag == "" {
-		*aliasFlag = strings.ToLower(strings.ReplaceAll(name, " ", "-"))
-	}
-
-	payload := storage.Service{
-		Name:          name,
-		Command:       *cmdFlag,
-		Alias:         *aliasFlag,
-		Port:          uint32(*portFlag),
-		Cwd:           *cwdFlag,
-		AutoPort:      *autoPortFlag,
-		AutoStart:     *autoStartFlag,
-		RestartPolicy: storage.RestartOnFailure,
-	}
-
-	var created registry.ServiceView
-	if err := connect().call(http.MethodPost, "/v1/services", payload, &created, http.StatusCreated); err != nil {
-		fatalf("Failed to register service: %v", err)
-	}
-	fmt.Printf("✓ Registered service %q (ID: %s)\n", created.Name, created.ID)
-	fmt.Printf("  Alias:     http://%s.localhost\n", created.Alias)
-	fmt.Printf("  Command:   %s\n", created.Command)
-	fmt.Printf("  Run 'prot start %s' to start.\n", created.ID)
 }
 
 func cmdStart(args []string) {

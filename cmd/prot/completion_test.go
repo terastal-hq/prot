@@ -407,7 +407,8 @@ func TestSpecMatchesFlags(t *testing.T) {
 	}{
 		{"cmdList", *findCommand(commandSpecs, "ls")},
 		{"cmdDiscover", *findCommand(commandSpecs, "discover")},
-		{"cmdAdd", *findCommand(commandSpecs, "add")},
+		{"parseServiceAdd", *findCommand(commandSpecs, "add")},
+		{"parseServiceEdit", *findCommand(commandSpecs, "edit")},
 		{"cmdAdopt", *findCommand(commandSpecs, "adopt")},
 		{"cmdLogs", *findCommand(commandSpecs, "logs")},
 		{"cmdUpdate", *findCommand(commandSpecs, "update")},
