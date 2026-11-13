@@ -37,7 +37,7 @@ paths:
               type: object
               required: [name, command]
               properties:
-                id: { type: string }
+                id: { type: string, description: Optional; generated when omitted, and an existing id is rejected }
                 name: { type: string }
                 alias: { type: string }
                 command: { type: string }
@@ -51,6 +51,8 @@ paths:
       responses:
         "201":
           description: Service registered
+        "400": { description: Invalid field, such as an empty command or a malformed alias }
+        "409": { description: The alias or id is already in use }
   /v1/services/{id}:
     get:
       summary: Read service details

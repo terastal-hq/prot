@@ -275,7 +275,9 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 		_ = r.router.SetRoute(svc.Alias, targetURL, svc.LANExposed)
 	}
 
-	_ = r.db.LogEvent(ctx, "service.registered", svc.ID, fmt.Sprintf(`{"name": %q, "alias": %q}`, svc.Name, svc.Alias))
+	_ = r.db.LogEvent(ctx, "service.registered", svc.ID, eventPayload(ctx, map[string]any{
+		"name": svc.Name, "alias": svc.Alias, "command": svc.Command, "cwd": svc.Cwd,
+	}))
 
 	view := r.toServiceView(svc)
 	r.Broadcast(Event{
@@ -288,13 +290,77 @@ func (r *Registry) RegisterService(ctx context.Context, svc storage.Service) (*S
 	return &view, nil
 }
 
-// Validation errors returned by UpdateService.
+// CreateService validates a new managed service the way UpdateService validates a patch, then registers it.
+// Unlike RegisterService it never overwrites an existing service, and it always assigns the runtime and status.
+func (r *Registry) CreateService(ctx context.Context, svc storage.Service) (*ServiceView, error) {
+	if svc.ID != "" {
+		if _, err := r.db.GetService(ctx, svc.ID); err == nil {
+			return nil, ErrIDTaken
+		} else if !errors.Is(err, storage.ErrNotFound) {
+			return nil, err
+		}
+	}
+	svc.Runtime = "managed"
+	svc.Status = storage.StatusStopped
+
+	svc.Name = strings.TrimSpace(svc.Name)
+	svc.Command = strings.TrimSpace(svc.Command)
+	svc.Cwd = strings.TrimSpace(svc.Cwd)
+	svc.Alias = strings.ToLower(strings.TrimSpace(svc.Alias))
+	if svc.RestartPolicy == "" {
+		svc.RestartPolicy = storage.RestartOnFailure
+	}
+
+	if svc.Name == "" {
+		return nil, invalidField("name cannot be empty")
+	}
+	if svc.Command == "" {
+		return nil, invalidField("command cannot be empty")
+	}
+	if svc.Port > 65535 {
+		return nil, invalidField("port must be between 0 and 65535")
+	}
+	switch svc.RestartPolicy {
+	case storage.RestartNever, storage.RestartOnFailure, storage.RestartAlways:
+	default:
+		return nil, invalidField("restart_policy must be no, on-failure or always")
+	}
+	for k := range svc.Env {
+		if k == "" || strings.ContainsAny(k, "= \t\n") {
+			return nil, invalidField("invalid environment variable name %q", k)
+		}
+	}
+
+	if svc.Alias != "" {
+		if !aliasPattern.MatchString(svc.Alias) {
+			return nil, ErrInvalidAlias
+		}
+		existing, err := r.db.ListServices(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range existing {
+			if o.Alias == svc.Alias {
+				return nil, ErrAliasTaken
+			}
+		}
+		if r.aliasInUseByTunnel(svc.Alias, "") {
+			return nil, ErrAliasTaken
+		}
+	}
+
+	return r.RegisterService(ctx, svc)
+}
+
+// Validation errors returned by UpdateService and CreateService.
 var (
 	// ErrInvalidAlias is returned when an alias is not a valid DNS label.
 	ErrInvalidAlias = errors.New("alias must be 1-63 characters: lowercase letters, digits and hyphens, " +
 		"not starting or ending with a hyphen")
 	// ErrAliasTaken is returned when another service or tunnel already uses the alias.
 	ErrAliasTaken = errors.New("alias is already used by another service or tunnel")
+	// ErrIDTaken is returned when a new service asks for the ID of an existing one.
+	ErrIDTaken = errors.New("a service with this id already exists")
 	// ErrInvalidField is returned for any other rejected field value.
 	ErrInvalidField = errors.New("invalid field")
 )
@@ -401,6 +467,7 @@ func (r *Registry) UpdateService(ctx context.Context, idOrAlias string, patch Se
 	}
 
 	oldAlias := svc.Alias
+	before := *svc
 	if err := applyPatch(svc, patch, all); err != nil {
 		return nil, err
 	}
@@ -412,7 +479,7 @@ func (r *Registry) UpdateService(ctx context.Context, idOrAlias string, patch Se
 	}
 
 	r.syncRoute(oldAlias, svc)
-	_ = r.db.LogEvent(ctx, "service.updated", id, "{}")
+	_ = r.db.LogEvent(ctx, "service.updated", id, eventPayload(ctx, changedFields(before, *svc)))
 
 	view := r.toServiceView(*svc)
 	r.Broadcast(Event{

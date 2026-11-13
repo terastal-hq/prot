@@ -233,3 +233,36 @@ func TestAPIFollowLogsUnknownServiceIs404(t *testing.T) {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
+
+func TestAPICreateServiceValidates(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	post := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/v1/services", bytes.NewReader([]byte(body)))
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := post(`{"id": "svc-a", "name": "A", "alias": "a", "command": "sleep 1"}`); code != http.StatusCreated {
+		t.Fatalf("first create: %d", code)
+	}
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"duplicate alias": {`{"name": "B", "alias": "a", "command": "x"}`, http.StatusConflict},
+		"duplicate id":    {`{"id": "svc-a", "name": "B", "alias": "b", "command": "x"}`, http.StatusConflict},
+		"no command":      {`{"name": "B", "alias": "b"}`, http.StatusBadRequest},
+		"bad alias":       {`{"name": "B", "alias": "Bad_Alias", "command": "x"}`, http.StatusBadRequest},
+		"bad port":        {`{"name": "B", "alias": "b", "command": "x", "port": 99999}`, http.StatusBadRequest},
+		"bad policy":      {`{"name": "B", "alias": "b", "command": "x", "restart_policy": "sometimes"}`, http.StatusBadRequest},
+		"no alias is ok":  {`{"name": "B", "command": "x"}`, http.StatusCreated},
+	}
+	for name, tc := range cases {
+		if code := post(tc.body); code != tc.want {
+			t.Errorf("%s: got %d, want %d", name, code, tc.want)
+		}
+	}
+}

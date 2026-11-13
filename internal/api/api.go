@@ -180,12 +180,15 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view, err := s.reg.RegisterService(r.Context(), svc)
-	if err != nil {
+	view, err := s.reg.CreateService(r.Context(), svc)
+	switch {
+	case errors.Is(err, registry.ErrAliasTaken), errors.Is(err, registry.ErrIDTaken):
+		jsonErr(w, http.StatusConflict, err.Error())
+	case err != nil:
 		jsonErr(w, http.StatusBadRequest, err.Error())
-		return
+	default:
+		jsonCreated(w, view)
 	}
-	jsonCreated(w, view)
 }
 
 func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {

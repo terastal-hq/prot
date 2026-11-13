@@ -201,7 +201,10 @@ func (r *Registry) RegisterTunnelWithPassword(
 			log.Printf("registry: routing %q: %v", st.Config.Alias, err)
 		}
 	}
-	_ = r.db.LogEvent(ctx, "tunnel.registered", cfg.ID, fmt.Sprintf(`{"alias": %q}`, cfg.Alias))
+	_ = r.db.LogEvent(ctx, "tunnel.registered", cfg.ID, eventPayload(ctx, map[string]any{
+		"alias": cfg.Alias, "host": st.Config.SSHHost, "user": st.Config.SSHUser,
+		"remote_host": st.Config.RemoteHost, "remote_port": st.Config.RemotePort,
+	}))
 
 	if st.Config.AutoConnect {
 		if started, err := r.tunnels.Start(ctx, cfg.ID); err == nil {

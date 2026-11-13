@@ -299,3 +299,41 @@ func TestGetServiceByIDOrAliasNeverMatchesEmpty(t *testing.T) {
 		t.Errorf("id lookup: %+v, %v", view, err)
 	}
 }
+
+// After a service has run and stopped, the supervisor still remembers its last port. Neither the view nor the
+// route may keep using it once the configured port changes.
+func TestStoppedServiceFollowsItsConfiguredPort(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "prot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	router := proxy.NewRouter()
+	reg := New(Config{DB: db, Router: router, GatewayHost: "8080"})
+	defer reg.StopAll(2 * time.Second)
+	ctx := context.Background()
+
+	if _, err := reg.CreateService(ctx, storage.Service{
+		Name: "Ran", Alias: "ran", Command: "sleep 30", Cwd: t.TempDir(), Port: 9401, RestartPolicy: storage.RestartNever,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.StartService(ctx, "ran"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.StopService(ctx, "ran"); err != nil {
+		t.Fatal(err)
+	}
+
+	port := uint32(9402)
+	view, err := reg.UpdateService(ctx, "ran", ServicePatch{Port: &port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Port != 9402 || view.DirectURL != "http://127.0.0.1:9402" {
+		t.Errorf("view should show the new port, got %d %s", view.Port, view.DirectURL)
+	}
+	if rt, ok := router.Match("ran.localhost"); !ok || rt.TargetURL != "http://127.0.0.1:9402" {
+		t.Errorf("route should follow the new port, got %+v", rt)
+	}
+}
